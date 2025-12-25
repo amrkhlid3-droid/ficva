@@ -1,0 +1,16 @@
+# Husky commit-msg hook
+# 在 git commit 消息创建后执行，验证提交信息格式 | Runs after commit message is created, validates commit message format
+
+# 运行 commitlint 检查提交信息 | Run commitlint to check commit message
+# $1 是包含提交信息的临时文件路径 | $1 is the temporary file path containing commit message
+bunx commitlint --edit "$1"
+
+# 如果提交信息不符合规范，提交将被中止 | If commit message doesn't meet standards, commit will be aborted
+# commitlint 会根据 commitlint.config.js 的规则进行检查 | commitlint checks based on rules in commitlint.config.js
+
+# 提交信息格式示例 | Commit message format examples:
+# feat(auth): add login functionality
+# fix(ui): resolve button alignment issue
+# docs: update README with new API endpoints
+# style(components): format code with prettier
+# refactor(utils): simplify date formatting logic

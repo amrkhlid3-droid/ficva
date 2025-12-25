@@ -1,0 +1,9 @@
+# Husky pre-commit hook
+# 在 git commit 前执行，运行 lint-staged | Runs before git commit, executes lint-staged
+
+# 运行 lint-staged | Run lint-staged
+# lint-staged 会根据 .lintstagedrc.js 配置检查暂存的文件 | lint-staged checks staged files based on .lintstagedrc.js config
+bunx lint-staged
+
+# 如果 lint-staged 失败，提交将被中止 | If lint-staged fails, commit will be aborted
+# 退出码会自动传递 | Exit code is automatically passed through
