@@ -15,10 +15,12 @@
     "quality:fix": "bun run lint:fix && bun run format && bun run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run db:push:test && npm run test:e2e:setup && playwright test",
+    "test:e2e:setup": "bun run --env-file=.env.test scripts/db-manager.ts",
     "test:e2e:ui": "playwright test --ui",
     "db:push:dev": "bun run --env-file=.env.development.local drizzle-kit push",
     "db:push:prod": "bun run --env-file=.env.production.local drizzle-kit push",
+    "db:push:test": "bun run --env-file=.env.test drizzle-kit push",
     "prepare": "husky"
   },
   "dependencies": {

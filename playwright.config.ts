@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 import dotenv from "dotenv"
 
-dotenv.config({ path: ".env.production.local" })
+dotenv.config({ path: ".env.test" })
 
 const PORT = 3001
 const baseURL = `http://localhost:${PORT}`
@@ -35,8 +35,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run start -- -p 3001",
+    command: "npm run build && npm run start -- -p 3001",
     url: baseURL,
-    reuseExistingServer: true,
+    reuseExistingServer: false, // Ensure we always start a fresh server with correct env / 确保总是启动带有正确环境的新服务器
+    timeout: 120 * 1000, // Give enough time for build / 给构建留出足够时间
   },
 })
