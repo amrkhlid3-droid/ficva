@@ -8,10 +8,17 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user
-      const isOnDashboard =
-        nextUrl.pathname.startsWith("/") &&
-        nextUrl.pathname !== "/login" &&
-        nextUrl.pathname !== "/register"
+      const isApiAuthRoute = nextUrl.pathname.startsWith("/api/auth")
+      const isPublicRoute =
+        nextUrl.pathname === "/login" ||
+        nextUrl.pathname === "/register" ||
+        nextUrl.pathname.startsWith("/images") ||
+        nextUrl.pathname.startsWith("/_next") ||
+        nextUrl.pathname.startsWith("/favicon.ico")
+
+      if (isApiAuthRoute) return true
+
+      const isOnDashboard = !isPublicRoute
 
       console.log(
         `[Middleware] Path: ${nextUrl.pathname}, User: ${!!auth?.user}, IsDashboard: ${isOnDashboard}`
@@ -26,6 +33,7 @@ export const authConfig = {
       ) {
         return Response.redirect(new URL("/", nextUrl))
       }
+      return true
       return true
     },
   },

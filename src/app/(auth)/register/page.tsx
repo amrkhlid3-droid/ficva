@@ -8,6 +8,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { registerSchema } from "@/lib/schemas"
 import { PasswordStrength } from "@/components/auth/password-strength"
+import { Social } from "@/components/auth/social"
 
 export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
@@ -48,7 +49,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="bg-muted/50 flex h-screen items-center justify-center">
+    <div className="bg-muted/50 flex min-h-screen w-full items-center justify-center p-4">
       <div className="bg-card w-full max-w-md space-y-8 rounded-lg border p-8 shadow-sm">
         <div className="text-center">
           <h1 className="text-2xl font-bold">Create an account</h1>
@@ -57,18 +58,34 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           <div className="space-y-2">
             <label htmlFor="name" className="text-sm font-medium">
               Name
             </label>
-            <Input id="name" name="name" type="text" required />
+            <Input
+              id="name"
+              name="name"
+              type="text"
+              required
+              autoComplete="off"
+              readOnly
+              onFocus={(e) => e.target.removeAttribute("readonly")}
+            />
           </div>
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium">
               Email
             </label>
-            <Input id="email" name="email" type="email" required />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              autoComplete="off"
+              readOnly
+              onFocus={(e) => e.target.removeAttribute("readonly")}
+            />
           </div>
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
@@ -78,7 +95,10 @@ export default function RegisterPage() {
               id="password"
               name="password"
               required
+              autoComplete="new-password"
               onChange={(e) => setPassword(e.target.value)}
+              readOnly
+              onFocus={(e) => e.target.removeAttribute("readonly")}
             />
             {password && <PasswordStrength password={password} />}
           </div>
@@ -90,6 +110,9 @@ export default function RegisterPage() {
               id="confirmPassword"
               name="confirmPassword"
               required
+              autoComplete="new-password"
+              readOnly
+              onFocus={(e) => e.target.removeAttribute("readonly")}
             />
           </div>
 
@@ -99,6 +122,16 @@ export default function RegisterPage() {
             {loading ? "Creating account..." : "Create account"}
           </Button>
         </form>
+
+        <div className="flex items-center gap-4">
+          <div className="bg-border h-px flex-1" />
+          <span className="text-muted-foreground text-xs uppercase">
+            Or continue with
+          </span>
+          <div className="bg-border h-px flex-1" />
+        </div>
+
+        <Social />
 
         <div className="text-center text-sm">
           Already have an account?{" "}

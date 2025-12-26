@@ -1,12 +1,24 @@
 "use client"
 
-import { Search, Bell, HelpCircle, Monitor } from "lucide-react"
+import { Search, Bell, HelpCircle, Monitor, LogOut, User } from "lucide-react"
+import { useSession, signOut } from "next-auth/react"
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 export function Header() {
+  const { data: session } = useSession()
+  const user = session?.user
+
   return (
     <header className="bg-background flex h-16 items-center gap-4 border-b px-6">
       <div className="flex flex-1 items-center gap-4">
@@ -47,10 +59,45 @@ export function Header() {
         <Button className="ml-2 bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white transition-opacity hover:opacity-90">
           Create a design
         </Button>
-        <Avatar className="ring-background hover:ring-primary ml-2 h-9 w-9 cursor-pointer ring-2 transition-shadow">
-          <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
-          <AvatarFallback>CN</AvatarFallback>
-        </Avatar>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Avatar className="ring-background hover:ring-primary ml-2 h-9 w-9 cursor-pointer ring-2 transition-shadow">
+              <AvatarImage src={user?.image || ""} alt={user?.name || "User"} />
+              <AvatarFallback>
+                {user?.name
+                  ? user.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()
+                      .slice(0, 2)
+                  : "CN"}
+              </AvatarFallback>
+            </Avatar>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm leading-none font-medium">
+                  {user?.name || "User"}
+                </p>
+                <p className="text-muted-foreground text-xs leading-none">
+                  {user?.email || "user@example.com"}
+                </p>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <User className="mr-2 h-4 w-4" />
+              <span>Profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => signOut()}>
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Log out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

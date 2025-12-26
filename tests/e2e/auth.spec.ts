@@ -19,9 +19,25 @@ test.describe("Authentication Flow / 认证流程", () => {
       page.getByRole("heading", { name: "Create an account" })
     ).toBeVisible()
 
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="name"]', userData.name)
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', userData.email)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', userData.password)
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', userData.password)
 
     await page.click('button[type="submit"]')
@@ -30,7 +46,15 @@ test.describe("Authentication Flow / 认证流程", () => {
     await expect(page).toHaveURL(/\/login/)
 
     // 2. Login / 2. 登录
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', userData.email)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', userData.password)
     await page.click('button[type="submit"]')
 
@@ -56,18 +80,50 @@ test.describe("Authentication Flow / 认证流程", () => {
 
     // 1. Initial Registration (Should succeed) / 1. 初始注册（应成功）
     await page.goto("/register")
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="name"]', userData.name)
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', userData.email)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', userData.password)
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', userData.password)
     await page.click('button[type="submit"]')
     await expect(page).toHaveURL(/\/login/) // Confirm success / 确认成功
 
     // 2. Duplicate Registration (Should fail) / 2. 重复注册（应失败）
     await page.goto("/register")
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="name"]', userData.name)
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', userData.email)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', userData.password)
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', userData.password)
     await page.click('button[type="submit"]')
 

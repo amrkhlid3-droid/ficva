@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/password-input"
+import { Social } from "@/components/auth/social"
 import { signIn } from "next-auth/react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -44,25 +45,41 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="bg-muted/50 flex h-screen items-center justify-center">
+    <div className="bg-muted/50 flex min-h-screen w-full items-center justify-center p-4">
       <div className="bg-card w-full max-w-md space-y-8 rounded-lg border p-8 shadow-sm">
         <div className="text-center">
           <h1 className="text-2xl font-bold">Welcome back</h1>
           <p className="text-muted-foreground">Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium">
               Email
             </label>
-            <Input id="email" name="email" type="email" required />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              required
+              autoComplete="off"
+              // Prevent autofill hack
+              readOnly
+              onFocus={(e) => e.target.removeAttribute("readonly")}
+            />
           </div>
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
               Password
             </label>
-            <PasswordInput id="password" name="password" required />
+            <PasswordInput
+              id="password"
+              name="password"
+              required
+              autoComplete="new-password"
+              readOnly
+              onFocus={(e) => e.target.removeAttribute("readonly")}
+            />
           </div>
 
           {error && <p className="text-destructive text-sm">{error}</p>}
@@ -71,6 +88,16 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign in"}
           </Button>
         </form>
+
+        <div className="flex items-center gap-4">
+          <div className="bg-border h-px flex-1" />
+          <span className="text-muted-foreground text-xs uppercase">
+            Or continue with
+          </span>
+          <div className="bg-border h-px flex-1" />
+        </div>
+
+        <Social />
 
         <div className="text-center text-sm">
           Don&apos;t have an account?{" "}

@@ -11,7 +11,10 @@ import {
   Home,
   Star,
   Trash2,
+  LogOut,
 } from "lucide-react"
+
+import { signOut } from "next-auth/react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -125,6 +128,14 @@ export function Sidebar({ className }: SidebarProps) {
           >
             <Settings className="h-4 w-4" />
             Settings
+          </Button>
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 px-4 text-sm font-normal text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+            onClick={() => signOut()}
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
           </Button>
         </div>
       </div>

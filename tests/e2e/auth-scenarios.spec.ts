@@ -9,12 +9,53 @@ test.describe("Authentication Scenarios / 认证场景", () => {
     await page.goto("/register")
 
     // Fill valid name and email / 填写有效的姓名和电子邮件
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="name"]', "Test User")
     const uniqueEmail = `auth-scenarios-val-${Date.now()}@example.com`
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', uniqueEmail)
 
+    // ... (later in file)
+
+    // Register a user first to ensure they exist / 先注册一个用户以确保其存在
+    await page.goto("/register")
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
+    await page.fill('input[name="name"]', "Login User")
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
+    await page.fill('input[name="email"]', uniqueEmail)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
+    await page.fill('input[name="password"]', "StrongP@ss1")
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
+    await page.fill('input[name="confirmPassword"]', "StrongP@ss1")
+
     // Try a weak password / 尝试使用弱密码
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', "weak")
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', "weak")
 
     // Check validation feedback (PasswordStrength component) / 检查验证反馈（密码强度组件）
@@ -35,16 +76,28 @@ test.describe("Authentication Scenarios / 认证场景", () => {
     )
 
     // Fill a strong password / 填写强密码
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', "StrongP@ss1")
     // Check validation feedback (all green) / 检查验证反馈（全绿）
     await expect(page.getByText("Strong")).toHaveClass(/text-green-600/)
 
     // Confirm password mismatch / 确认密码不匹配
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', "Mismatch1!")
     await page.click('button[type="submit"]')
     await expect(page.getByText("Passwords do not match")).toBeVisible()
 
     // Success flow / 成功流程
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', "StrongP@ss1")
     await page.click('button[type="submit"]')
     await expect(page).toHaveURL("/login")
@@ -56,15 +109,39 @@ test.describe("Authentication Scenarios / 认证场景", () => {
     const uniqueEmail = `auth-scenarios-login-${Date.now()}@example.com`
     // Register a user first to ensure they exist / 先注册一个用户以确保其存在
     await page.goto("/register")
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="name"]', "Login User")
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', uniqueEmail)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', "StrongP@ss1")
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', "StrongP@ss1")
     await page.click('button[type="submit"]')
     await expect(page).toHaveURL("/login")
 
     // Now try to log in / 现在尝试登录
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', uniqueEmail)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', "StrongP@ss1")
     await page.click('button[type="submit"]')
     await expect(page).toHaveURL("/")
@@ -74,10 +151,26 @@ test.describe("Authentication Scenarios / 认证场景", () => {
     page,
   }) => {
     await page.goto("/register")
+    await page.focus('input[name="name"]')
+    await expect(page.locator('input[name="name"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="name"]', "<script>alert(1)</script>")
     const uniqueEmail = `auth-scenarios-xss-${Date.now()}@example.com`
+    await page.focus('input[name="email"]')
+    await expect(page.locator('input[name="email"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="email"]', uniqueEmail)
+    await page.focus('input[name="password"]')
+    await expect(page.locator('input[name="password"]')).not.toHaveAttribute(
+      "readonly"
+    )
     await page.fill('input[name="password"]', "StrongP@ss1")
+    await page.focus('input[name="confirmPassword"]')
+    await expect(
+      page.locator('input[name="confirmPassword"]')
+    ).not.toHaveAttribute("readonly")
     await page.fill('input[name="confirmPassword"]', "StrongP@ss1")
 
     // Attempt registration / 尝试注册
