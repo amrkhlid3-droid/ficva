@@ -4,24 +4,19 @@
     "target": "ES2017",
     // 指定 ECMAScript 目标版本 | Specify ECMAScript target version
     // ES3, ES5, ES6/ES2015, ES2016, ES2017, ES2018, ES2019, ES2020, ESNext
-
     // 库文件 | Library files
     "lib": ["dom", "dom.iterable", "esnext"],
     // 编译时包含的库文件 | Library files to include in compilation
     // dom: DOM API, esnext: 最新 ES 特性 | DOM API, esnext: latest ES features
-
     // JavaScript 支持 | JavaScript support
     "allowJs": true,
     // 允许编译 JavaScript 文件 | Allow compiling JavaScript files
-
     // 跳过库检查 | Skip library check
     "skipLibCheck": true,
     // 跳过声明文件的类型检查 | Skip type checking of declaration files
-
     // 严格模式配置 | Strict mode configuration
     "strict": true,
     // 启用所有严格类型检查选项 | Enable all strict type checking options
-
     // 严格模式详细选项（已被 strict: true 包含）| Detailed strict options (included by strict: true)
     // "noImplicitAny": true,                    // 不允许隐式 any 类型 | Disallow implicit any types
     // "strictNullChecks": true,                 // 严格的 null 检查 | Strict null checks
@@ -31,7 +26,6 @@
     // "noImplicitThis": true,                   // 不允许隐式 this | Disallow implicit this
     // "useUnknownInCatchVariables": true,       // catch 变量默认为 unknown | Catch variables default to unknown
     // "alwaysStrict": true,                     // 始终使用严格模式 | Always use strict mode
-
     // 额外的类型检查选项 | Additional type checking options
     "noUnusedLocals": true, // 报告未使用的局部变量 | Report unused local variables
     "noUnusedParameters": true, // 报告未使用的参数 | Report unused parameters
@@ -41,40 +35,30 @@
     "noImplicitOverride": true, // 重写方法必须使用 override | Override methods must use override
     "noPropertyAccessFromIndexSignature": false, // 通过索引访问必须使用括号 | Index access must use brackets
     // "exactOptionalPropertyTypes": true,        // 精确的可选属性类型（如需要请取消注释）| Exact optional property types (uncomment if needed)
-
     // 输出配置 | Output configuration
     "noEmit": true,
     // 不生成输出文件（Next.js 自行处理）| Don't emit output files (Next.js handles this)
-
     // 模块解析配置 | Module resolution configuration
     "esModuleInterop": true,
     // 启用 ES 模块互操作性 | Enable ES module interoperability
-
     "module": "esnext",
     // 模块代码生成方式 | Module code generation
-
     "moduleResolution": "bundler",
     // 模块解析策略 | Module resolution strategy
     // node: Node.js 风格, bundler: 打包工具风格 | node: Node.js style, bundler: bundler style
-
     "resolveJsonModule": true,
     // 允许导入 JSON 文件 | Allow importing JSON files
-
     "isolatedModules": true,
     // 将每个文件作为单独的模块 | Treat each file as separate module
-
     // JSX 配置 | JSX configuration
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     // JSX 代码生成方式 | JSX code generation
     // preserve: 保留 JSX, react: 转换为 React.createElement | preserve: keep JSX, react: transform to React.createElement
-
     // 编译优化 | Compilation optimization
     "incremental": true,
     // 启用增量编译 | Enable incremental compilation
-
     "forceConsistentCasingInFileNames": true,
     // 强制文件名大小写一致 | Force consistent file name casing
-
     // 插件配置 | Plugin configuration
     "plugins": [
       {
@@ -82,13 +66,11 @@
         // Next.js TypeScript 插件 | Next.js TypeScript plugin
       }
     ],
-
     // 路径别名配置 | Path alias configuration
     "paths": {
       "@/*": ["./src/*"]
       // @ 符号指向 src 目录 | @ symbol points to src directory
     }
-
     // 其他有用的配置选项（根据需要取消注释）| Other useful options (uncomment as needed)
     // "baseUrl": "./",                          // 基础目录 | Base directory
     // "rootDir": "./src",                       // 根目录 | Root directory
@@ -111,15 +93,14 @@
     // "preserveValueImports": true,             // 保留值导入 | Preserve value imports
     // "verbatimModuleSyntax": true,            // 逐字模块语法 | Verbatim module syntax
   },
-
   // 包含的文件 | Files to include
   "include": [
     "next-env.d.ts", // Next.js 环境类型定义 | Next.js environment type definitions
     "**/*.ts", // 所有 TypeScript 文件 | All TypeScript files
     "**/*.tsx", // 所有 TypeScript React 文件 | All TypeScript React files
-    ".next/types/**/*.ts" // Next.js 生成的类型 | Next.js generated types
+    ".next/types/**/*.ts", // Next.js 生成的类型 | Next.js generated types
+    ".next/dev/types/**/*.ts"
   ],
-
   // 排除的文件 | Files to exclude
   "exclude": [
     "node_modules" // 依赖目录 | Dependencies directory
@@ -129,10 +110,8 @@
     // "**/*.spec.ts",         // 测试文件（如需要请取消注释）| Test files (uncomment if needed)
     // "**/*.test.ts"          // 测试文件（如需要请取消注释）| Test files (uncomment if needed)
   ]
-
   // 继承配置（如需要请取消注释）| Extends configuration (uncomment if needed)
   // "extends": "@tsconfig/recommended/tsconfig.json"
-
   // TypeScript 引用项目配置（如需要请取消注释）| TypeScript project references (uncomment if needed)
   // "references": [
   //   { "path": "./tsconfig.node.json" }

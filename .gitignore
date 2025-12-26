@@ -42,3 +42,7 @@ next-env.d.ts
 
 # eslint cache
 .eslintcache
+
+# playwright
+/playwright-report
+/test-results
