@@ -14,7 +14,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1, // Retry once locally to handle concurrency flakes / 本地重试一次以处理并发不稳定性
-  workers: process.env.CI ? 1 : "80%", // Use 80% CPU locally / 本地使用 80% CPU
+  workers: process.env.CI ? 1 : "50%", // Use 50% CPU locally / 本地使用 50% CPU
   reporter: "html",
   use: {
     baseURL,

@@ -147,7 +147,7 @@ test.describe("Authentication Scenarios / 认证场景", () => {
     await expect(page).toHaveURL("/")
   })
 
-  test.skip("should prevent XSS patterns in input / 应防止输入中的 XSS 模式", async ({
+  test("should prevent XSS patterns in input / 应防止输入中的 XSS 模式", async ({
     page,
   }) => {
     await page.goto("/register")
