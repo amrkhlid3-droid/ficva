@@ -26,9 +26,12 @@ jobs:
         run: bunx playwright install --with-deps
 
       - name: Create .env.test
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
         run: |
-          echo "DATABASE_URL=${{ secrets.TEST_DATABASE_URL }}" > .env.test
-          echo "AUTH_SECRET=${{ secrets.AUTH_SECRET || 'dummy_secret_for_ci_build' }}" >> .env.test
+          echo "DATABASE_URL=$TEST_DATABASE_URL" > .env.test
+          echo "AUTH_SECRET=${AUTH_SECRET:-dummy_secret_for_ci_build}" >> .env.test
 
       - name: Run E2E Tests
         run: npm run test:e2e
