@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { Canvas } from "fabric"
+import { Canvas, FabricObject } from "fabric"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 
@@ -78,7 +78,29 @@ export default function FabricCanvas() {
       dragStartRef.current = null // Reset
     })
 
+    // Keyboard Shortcuts
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input field
+      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
+        return
+      }
+
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey
+
+      if (isCtrlOrMeta && e.key === "z") {
+        e.preventDefault()
+        if (e.shiftKey) {
+          history.redo()
+        } else {
+          history.undo()
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+
     return () => {
+      window.removeEventListener("keydown", handleKeyDown)
       canvas.dispose()
       setCanvas(null)
     }

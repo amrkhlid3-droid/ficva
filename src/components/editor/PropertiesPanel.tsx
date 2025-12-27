@@ -94,6 +94,85 @@ export default function PropertiesPanel() {
           {activeObject.type} Layer
         </div>
 
+        {/* Text Properties Section */}
+        {activeObject.type === "i-text" && (
+          <div className="mb-4 space-y-4 border-b border-gray-100 pb-4">
+            <label className="block text-sm font-medium text-gray-700">
+              Typography
+            </label>
+            <div className="space-y-3">
+              {/* Font Family */}
+              <div>
+                <select
+                  className="w-full rounded border border-gray-200 p-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  value={(activeObject as any).fontFamily || "Arial"}
+                  onChange={(e) => updateProperty("fontFamily", e.target.value)}
+                >
+                  {[
+                    "Arial",
+                    "Helvetica",
+                    "Times New Roman",
+                    "Courier New",
+                    "Verdana",
+                    "Georgia",
+                  ].map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Font Size & Weight */}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <input
+                    type="number"
+                    className="w-full rounded border border-gray-200 p-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    value={(activeObject as any).fontSize || 20}
+                    onChange={(e) =>
+                      updateProperty("fontSize", parseInt(e.target.value))
+                    }
+                    placeholder="Size"
+                  />
+                </div>
+                <button
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  onClick={() =>
+                    updateProperty(
+                      "fontWeight",
+                      (activeObject as any).fontWeight === "bold"
+                        ? "normal"
+                        : "bold"
+                    )
+                  }
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  className={`rounded border px-3 py-1 ${(activeObject as any).fontWeight === "bold" ? "bg-gray-200 font-bold" : "bg-white"}`}
+                >
+                  B
+                </button>
+                <button
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  onClick={() =>
+                    updateProperty(
+                      "fontStyle",
+                      (activeObject as any).fontStyle === "italic"
+                        ? "normal"
+                        : "italic"
+                    )
+                  }
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  className={`rounded border px-3 py-1 italic ${(activeObject as any).fontStyle === "italic" ? "bg-gray-200" : "bg-white"}`}
+                >
+                  I
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Fill Color Section */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700">

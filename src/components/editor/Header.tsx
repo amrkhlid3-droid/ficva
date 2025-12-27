@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useEditorStore } from "@/store/useEditorStore"
-import { Download, Undo2, Redo2 } from "lucide-react"
+import { Download, Undo2, Redo2, LayoutTemplate } from "lucide-react"
 
 export default function Header() {
   const { canvas, history, canUndo, canRedo } = useEditorStore()
@@ -28,8 +28,14 @@ export default function Header() {
   return (
     <header className="relative z-10 flex h-14 items-center justify-between border-b bg-white px-4 shadow-sm">
       <div className="flex items-center gap-4">
-        <Link href="/" className="text-xl font-bold">
-          Ficva
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-xl font-bold text-gray-900"
+        >
+          <div className="rounded-lg bg-blue-600 p-1.5 text-white">
+            <LayoutTemplate className="h-5 w-5" />
+          </div>
+          <span>Ficva</span>
         </Link>
         <div className="h-6 w-px bg-gray-300" />
         <span className="text-sm text-gray-500">Untitled Design</span>

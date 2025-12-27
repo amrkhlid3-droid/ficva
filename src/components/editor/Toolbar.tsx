@@ -2,8 +2,13 @@
 
 import { useRef } from "react"
 import { useEditorStore } from "@/store/useEditorStore"
-import { Rect, Circle, FabricImage } from "fabric"
-import { Square, Circle as CircleIcon, Image as ImageIcon } from "lucide-react"
+import { Rect, Circle, FabricImage, IText } from "fabric"
+import {
+  Square,
+  Circle as CircleIcon,
+  Image as ImageIcon,
+  Type,
+} from "lucide-react"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 
 export default function Toolbar() {
@@ -36,6 +41,21 @@ export default function Toolbar() {
     })
 
     const command = new AddObjectCommand(canvas, circle)
+    history.execute(command)
+  }
+
+  const addText = () => {
+    if (!canvas) return
+
+    const text = new IText("Hello Text", {
+      left: 100,
+      top: 200,
+      fontFamily: "Arial",
+      fill: "#333333",
+      fontSize: 36,
+    })
+
+    const command = new AddObjectCommand(canvas, text)
     history.execute(command)
   }
 
@@ -91,6 +111,14 @@ export default function Toolbar() {
         >
           <CircleIcon className="h-5 w-5" />
           <span>Add Circle</span>
+        </button>
+
+        <button
+          onClick={addText}
+          className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:border-blue-400 hover:bg-gray-100"
+        >
+          <Type className="h-5 w-5" />
+          <span>Add Text</span>
         </button>
 
         <button
