@@ -21,6 +21,7 @@
     "db:push:dev": "bun run --env-file=.env.development.local drizzle-kit push",
     "db:push:prod": "bun run --env-file=.env.production.local drizzle-kit push",
     "db:push:test": "bun run --env-file=.env.test drizzle-kit push",
+    "chrome:dev:mac": "\"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" --user-data-dir=./.chrome-user-data --remote-debugging-port=9222",
     "prepare": "husky"
   },
   "dependencies": {
@@ -64,7 +65,9 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
     "embla-carousel-react": "^8.6.0",
+    "fabric": "^7.0.0",
     "hono": "^4.11.1",
+    "immer": "^11.1.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
@@ -80,7 +83,8 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
-    "zod": "^4.2.1"
+    "zod": "^4.2.1",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.2.0",
