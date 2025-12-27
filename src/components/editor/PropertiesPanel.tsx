@@ -2,6 +2,8 @@
 
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
+import { BringToFrontCommand } from "@/lib/editor/history/commands/BringToFrontCommand"
+import { SendToBackCommand } from "@/lib/editor/history/commands/SendToBackCommand"
 import { useRef, useState, useEffect } from "react"
 
 export default function PropertiesPanel() {
@@ -26,14 +28,11 @@ export default function PropertiesPanel() {
 
   if (!selectedObjects || selectedObjects.length === 0) {
     return (
-      <aside className="z-10 flex h-full w-72 flex-col border-l bg-gray-50/50 bg-white">
-        <div className="border-b bg-white p-4">
-          <h3 className="font-semibold text-gray-700">Properties</h3>
-        </div>
+      <div className="flex h-full w-full flex-col bg-white">
         <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
           Select an object to edit
         </div>
-      </aside>
+      </div>
     )
   }
 
@@ -86,11 +85,7 @@ export default function PropertiesPanel() {
   }
 
   return (
-    <aside className="z-10 flex h-full w-72 flex-col border-l bg-white">
-      <div className="border-b p-4">
-        <h3 className="font-semibold text-gray-700">Properties</h3>
-      </div>
-
+    <div className="flex h-full w-full flex-col bg-white">
       <div className="space-y-6 p-4">
         {/* Layer Info */}
         <div className="text-xs font-medium tracking-wider text-gray-500 uppercase">
@@ -299,9 +294,8 @@ export default function PropertiesPanel() {
             <button
               onClick={() => {
                 if (activeObject && canvas) {
-                  canvas.bringObjectToFront(activeObject)
-                  canvas.requestRenderAll()
-                  // TODO: Implement BringToFrontCommand
+                  const command = new BringToFrontCommand(canvas, activeObject)
+                  history.execute(command)
                 }
               }}
               className="flex-1 rounded bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
@@ -311,9 +305,8 @@ export default function PropertiesPanel() {
             <button
               onClick={() => {
                 if (activeObject && canvas) {
-                  canvas.sendObjectToBack(activeObject)
-                  canvas.requestRenderAll()
-                  // TODO: Implement SendToBackCommand
+                  const command = new SendToBackCommand(canvas, activeObject)
+                  history.execute(command)
                 }
               }}
               className="flex-1 rounded bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
@@ -330,6 +323,6 @@ export default function PropertiesPanel() {
           </pre>
         </div>
       </div>
-    </aside>
+    </div>
   )
 }

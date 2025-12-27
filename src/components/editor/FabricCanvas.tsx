@@ -4,10 +4,11 @@ import { useEffect, useRef } from "react"
 import { Canvas, FabricObject } from "fabric"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
+import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 
 export default function FabricCanvas() {
   const canvasEl = useRef<HTMLCanvasElement>(null)
-  const { setCanvas, history } = useEditorStore()
+  const { setCanvas, history, syncLayers } = useEditorStore()
 
   // Track start state for drag operations
   const dragStartRef = useRef<Partial<FabricObject> | null>(null)
@@ -21,6 +22,9 @@ export default function FabricCanvas() {
       width: 800,
       height: 600,
       backgroundColor: "#ffffff",
+      fireRightClick: true, // Enable right click events
+      stopContextMenu: true, // Prevent default browser context menu
+      preserveObjectStacking: true, // Allow selected objects to be behind others visually
     })
 
     setCanvas(canvas)
@@ -78,6 +82,14 @@ export default function FabricCanvas() {
       dragStartRef.current = null // Reset
     })
 
+    // Sync layers on modification/add/remove
+    canvas.on("object:added", () => syncLayers(canvas))
+    canvas.on("object:removed", () => syncLayers(canvas))
+    canvas.on("object:modified", () => syncLayers(canvas))
+
+    // Initial sync
+    syncLayers(canvas)
+
     // Keyboard Shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input field
@@ -95,6 +107,35 @@ export default function FabricCanvas() {
           history.undo()
         }
       }
+      if (["Backspace", "Delete"].includes(e.key)) {
+        console.log("Backspace pressed")
+        // Get strict clone of active objects
+        const activeObjects = [...canvas.getActiveObjects()]
+        console.log("Active objects to delete:", activeObjects.length)
+
+        if (activeObjects.length > 0) {
+          // Note: We do NOT discard here anymore, the command handles it.
+          // Or we DO discard here to ensure indices are correct for the command constructor?
+          // WAIT. Command constructor needs INDICES.
+          // If objects are in ActiveSelection, they are NOT in getObjects() (in some fabric versions).
+          // To be safe, we discard FIRST, then create command.
+
+          canvas.discardActiveObject()
+          canvas.requestRenderAll() // Flush to ensure _objects is updated
+
+          // Debug check
+          const canvasObjects = canvas.getObjects()
+          const validObjects = activeObjects.filter((obj) =>
+            canvasObjects.includes(obj)
+          )
+          console.log("Valid objects on canvas:", validObjects.length)
+
+          if (validObjects.length > 0) {
+            const command = new RemoveObjectsCommand(canvas, validObjects)
+            history.execute(command)
+          }
+        }
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown)
@@ -104,7 +145,7 @@ export default function FabricCanvas() {
       canvas.dispose()
       setCanvas(null)
     }
-  }, [setCanvas, history])
+  }, [setCanvas, history, syncLayers])
 
   return (
     <div className="flex h-full w-full items-center justify-center overflow-auto bg-gray-100">

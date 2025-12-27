@@ -1,5 +1,6 @@
 import { Canvas, FabricObject } from "fabric"
 import { Command } from "../types"
+import { safeRemove } from "@/lib/editor/utils/CanvasUtils"
 
 export class AddObjectCommand implements Command {
   constructor(
@@ -14,7 +15,7 @@ export class AddObjectCommand implements Command {
   }
 
   undo() {
-    this.canvas.remove(this.object)
+    safeRemove(this.canvas, this.object)
     this.canvas.discardActiveObject()
     this.canvas.requestRenderAll()
   }

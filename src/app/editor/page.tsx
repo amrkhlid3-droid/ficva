@@ -1,7 +1,8 @@
 import Toolbar from "@/components/editor/Toolbar"
 import Header from "@/components/editor/Header"
 import FabricCanvas from "@/components/editor/FabricCanvas"
-import PropertiesPanel from "@/components/editor/PropertiesPanel"
+import RightSidebar from "@/components/editor/RightSidebar"
+import ContextMenu from "@/components/editor/ContextMenu"
 
 export default function EditorPage() {
   return (
@@ -16,10 +17,11 @@ export default function EditorPage() {
         {/* Middle Layer: Canvas */}
         <main className="relative flex-1 bg-gray-50">
           <FabricCanvas />
+          <ContextMenu />
         </main>
 
-        {/* Right Sidebar: Properties Panel */}
-        <PropertiesPanel />
+        {/* Right Sidebar: Properties Panel & Layers */}
+        <RightSidebar />
       </div>
     </div>
   )
