@@ -68,6 +68,9 @@ export default function PropertiesPanel() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const currentFontSize = (activeObject as any).fontSize || 20
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const commitProperty = (key: string, value: any, originalValue: any) => {
     if (activeObject && canvas) {
       // If the values are different, push to history
@@ -104,7 +107,7 @@ export default function PropertiesPanel() {
               {/* Font Family */}
               <div>
                 <select
-                  className="w-full rounded border border-gray-200 p-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded border border-gray-300 bg-white p-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   value={(activeObject as any).fontFamily || "Arial"}
                   onChange={(e) => updateProperty("fontFamily", e.target.value)}
@@ -129,42 +132,66 @@ export default function PropertiesPanel() {
                 <div className="flex-1">
                   <input
                     type="number"
-                    className="w-full rounded border border-gray-200 p-1.5 text-sm focus:border-blue-500 focus:outline-none"
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    value={(activeObject as any).fontSize || 20}
-                    onChange={(e) =>
-                      updateProperty("fontSize", parseInt(e.target.value))
-                    }
+                    className="w-full rounded border border-gray-300 bg-white p-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                    // Display effective font size: fontSize * scale
+                    value={Math.round(
+                      currentFontSize * (activeObject.scaleY || 1)
+                    )}
+                    onChange={(e) => {
+                      const newSize = parseInt(e.target.value)
+                      if (activeObject && canvas) {
+                        // When changing font size explicitly, reset scale to 1 to make fontSize the source of truth
+                        const originalState = {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          fontSize: (activeObject as any).fontSize,
+                          scaleX: activeObject.scaleX,
+                          scaleY: activeObject.scaleY,
+                        }
+                        const newState = {
+                          fontSize: newSize,
+                          scaleX: 1,
+                          scaleY: 1,
+                        }
+
+                        // Execute command with multiple property changes
+                        const command = new ModifyObjectCommand(
+                          activeObject,
+                          newState,
+                          originalState
+                        )
+                        history.execute(command)
+                      }
+                    }}
                     placeholder="Size"
                   />
                 </div>
                 <button
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   onClick={() =>
                     updateProperty(
                       "fontWeight",
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       (activeObject as any).fontWeight === "bold"
                         ? "normal"
                         : "bold"
                     )
                   }
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  className={`rounded border px-3 py-1 ${(activeObject as any).fontWeight === "bold" ? "bg-gray-200 font-bold" : "bg-white"}`}
+                  className={`rounded border border-gray-300 px-3 py-1 text-gray-900 ${(activeObject as any).fontWeight === "bold" ? "bg-gray-200 font-bold" : "bg-white"}`}
                 >
                   B
                 </button>
                 <button
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   onClick={() =>
                     updateProperty(
                       "fontStyle",
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       (activeObject as any).fontStyle === "italic"
                         ? "normal"
                         : "italic"
                     )
                   }
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  className={`rounded border px-3 py-1 italic ${(activeObject as any).fontStyle === "italic" ? "bg-gray-200" : "bg-white"}`}
+                  className={`rounded border border-gray-300 px-3 py-1 text-gray-900 italic ${(activeObject as any).fontStyle === "italic" ? "bg-gray-200" : "bg-white"}`}
                 >
                   I
                 </button>
@@ -223,7 +250,7 @@ export default function PropertiesPanel() {
               onChange={(e) =>
                 updateProperty("strokeWidth", parseInt(e.target.value))
               }
-              className="w-20 rounded border px-2 py-1 text-sm"
+              className="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
               placeholder="Width"
             />
           </div>
