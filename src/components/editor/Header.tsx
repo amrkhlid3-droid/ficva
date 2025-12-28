@@ -63,6 +63,40 @@ export default function Header() {
       </div>
       <div className="flex items-center gap-2">
         <button
+          onClick={async () => {
+            if (!canvas) return
+            // Get raw JSON
+            const json = canvas.toJSON()
+            // Assume we can get project ID from URL (since Header is child of EditorPage which is client component)
+            // But cleaner to genericize. For now, use window location or passed via Context?
+            // Header is used in EditorPage, let's use useParams since Header is "use client"
+
+            // Extract Project ID from URL
+            // Path format: /editor/[id]
+            const pathParts = window.location.pathname.split("/")
+            const id = pathParts[pathParts.length - 1] // simple check
+
+            try {
+              const res = await fetch(`/api/projects/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ json }),
+              })
+              if (res.ok) {
+                alert("Saved successfully!")
+              } else {
+                alert("Failed to save")
+              }
+            } catch (e) {
+              console.error(e)
+              alert("Error saving")
+            }
+          }}
+          className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+        >
+          Save
+        </button>
+        <button
           onClick={handleExport}
           className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >

@@ -10,7 +10,7 @@ export default function RightSidebar() {
   const [activeTab, setActiveTab] = useState("properties")
 
   return (
-    <aside className="z-10 flex h-full w-80 flex-col border-l bg-white">
+    <aside className="z-10 flex h-full w-full flex-col border-l bg-white">
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
@@ -29,16 +29,16 @@ export default function RightSidebar() {
           </TabsList>
         </div>
 
-        <div className="flex-1 overflow-auto bg-gray-50/50 relative">
+        <div className="relative flex-1 overflow-auto bg-gray-50/50">
           <TabsContent
             value="properties"
-            className="absolute inset-0 m-0 h-full w-full border-none outline-none data-[state=active]:flex flex-col overflow-auto"
+            className="absolute inset-0 m-0 h-full w-full flex-col overflow-auto border-none outline-none data-[state=active]:flex"
           >
             <PropertiesPanel />
           </TabsContent>
           <TabsContent
             value="layers"
-            className="absolute inset-0 m-0 h-full w-full border-none outline-none data-[state=active]:flex flex-col overflow-auto"
+            className="absolute inset-0 m-0 h-full w-full flex-col overflow-auto border-none outline-none data-[state=active]:flex"
           >
             <LayersPanel />
           </TabsContent>

@@ -15,9 +15,34 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+import { useRouter } from "next/navigation"
+import { useState } from "react"
+
 export function Header() {
+  const router = useRouter()
   const { data: session } = useSession()
   const user = session?.user
+  const [isCreating, setIsCreating] = useState(false)
+
+  const createProject = async () => {
+    setIsCreating(true)
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Untitled Design" }),
+      })
+
+      if (res.ok) {
+        const project = await res.json()
+        router.push(`/editor/${project.id}`)
+      }
+    } catch (error) {
+      console.error("Failed to create project", error)
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   return (
     <header className="bg-background flex h-16 items-center gap-4 border-b px-6">
@@ -56,8 +81,12 @@ export function Header() {
           <Bell className="h-5 w-5" />
           <span className="sr-only">Notifications</span>
         </Button>
-        <Button className="ml-2 bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white transition-opacity hover:opacity-90">
-          Create a design
+        <Button
+          className="ml-2 bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white transition-opacity hover:opacity-90"
+          onClick={createProject}
+          disabled={isCreating}
+        >
+          {isCreating ? "Creating..." : "Create a design"}
         </Button>
 
         <DropdownMenu>

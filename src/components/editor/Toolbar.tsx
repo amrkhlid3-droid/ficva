@@ -9,7 +9,7 @@ import {
   Image as ImageIcon,
   Type,
   LayoutGrid,
-  ChevronLeft
+  ChevronLeft,
 } from "lucide-react"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 import AssetLibrary from "@/components/editor/AssetLibrary"
@@ -79,7 +79,8 @@ export default function Toolbar() {
           }),
         })
 
-        if (!response.ok) throw new Error(`Failed to get presigned URL for ${file.name}`)
+        if (!response.ok)
+          throw new Error(`Failed to get presigned URL for ${file.name}`)
 
         const { uploadUrl } = await response.json()
 
@@ -90,7 +91,8 @@ export default function Toolbar() {
           headers: { "Content-Type": file.type },
         })
 
-        if (!uploadResponse.ok) throw new Error(`Upload failed for ${file.name}`)
+        if (!uploadResponse.ok)
+          throw new Error(`Upload failed for ${file.name}`)
       })
 
       await Promise.all(uploadPromises)
@@ -113,7 +115,7 @@ export default function Toolbar() {
 
   if (showAssets) {
     return (
-      <aside className="z-10 flex h-full w-72 flex-col border-r bg-white">
+      <aside className="z-10 flex h-full w-full flex-col border-r bg-white">
         <div className="flex items-center gap-2 border-b p-4">
           <button
             onClick={() => setShowAssets(false)}
@@ -123,7 +125,7 @@ export default function Toolbar() {
           </button>
           <h3 className="font-semibold text-gray-700">My Uploads</h3>
         </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 overflow-x-hidden overflow-y-auto">
           <AssetLibrary refreshKey={refreshKey} />
         </div>
         <div className="border-t p-4">
@@ -153,7 +155,7 @@ export default function Toolbar() {
   }
 
   return (
-    <aside className="z-10 flex h-full w-72 flex-col border-r bg-white">
+    <aside className="z-10 flex h-full w-full flex-col bg-white dark:bg-zinc-900">
       <div className="border-b p-4">
         <h3 className="font-semibold text-gray-700">Tools</h3>
       </div>

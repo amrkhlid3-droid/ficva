@@ -1,7 +1,9 @@
 "use client"
 
+import { useState } from "react"
+
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   LayoutGrid,
   FolderOpen,
@@ -24,6 +26,28 @@ type SidebarProps = React.HTMLAttributes<HTMLDivElement>
 
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const [isCreating, setIsCreating] = useState(false)
+
+  const createProject = async () => {
+    setIsCreating(true)
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Untitled Design" }),
+      })
+
+      if (res.ok) {
+        const project = await res.json()
+        router.push(`/editor/${project.id}`)
+      }
+    } catch (error) {
+      console.error("Failed to create project", error)
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   const items = [
     {
@@ -74,9 +98,13 @@ export function Sidebar({ className }: SidebarProps) {
             </h2>
           </div>
           <div className="mb-4 px-3">
-            <Button className="bg-primary hover:bg-primary/90 w-full justify-start gap-2 text-white shadow-md">
+            <Button
+              className="bg-primary hover:bg-primary/90 w-full justify-start gap-2 text-white shadow-md"
+              onClick={createProject}
+              disabled={isCreating}
+            >
               <Plus className="size-4" />
-              Create a design
+              {isCreating ? "Creating..." : "Create a design"}
             </Button>
           </div>
           <div className="space-y-1">
