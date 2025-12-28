@@ -1,0 +1,56 @@
+{
+  "editor": {
+    "header": {
+      "untitled": "未命名设计",
+      "export": "导出",
+      "share": "分享",
+      "saving": "保存中...",
+      "saved": "已保存"
+    },
+    "toolbar": {
+      "select": "选择",
+      "hand": "抓手工具",
+      "zoom_in": "放大",
+      "zoom_out": "缩小",
+      "undo": "撤销",
+      "redo": "重做"
+    },
+    "panels": {
+      "assets": "资源库",
+      "layers": "图层",
+      "design": "设计",
+      "text": "文字",
+      "upload": "上传",
+      "elements": "素材"
+    },
+    "properties": {
+      "no_selection": "未选择",
+      "select_object": "选择一个对象以编辑属性",
+      "typography": "排版",
+      "fill": "填充",
+      "stroke": "描边",
+      "opacity": "不透明度",
+      "position": "位置",
+      "alignment": "对齐",
+      "arrange": "排列",
+      "bring_front": "置于顶层",
+      "send_back": "置于底层",
+      "width": "宽",
+      "height": "高",
+      "x": "X",
+      "y": "Y"
+    },
+    "layers": {
+      "empty": "暂无图层",
+      "visible": "切换可见性",
+      "locked": "切换锁定",
+      "delete": "删除"
+    },
+    "assets": {
+      "upload_image": "上传图片",
+      "search_placeholder": "搜索素材...",
+      "no_assets": "未找到素材",
+      "drop_files": "拖拽文件到这里"
+    }
+  }
+}

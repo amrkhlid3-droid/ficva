@@ -1,0 +1,56 @@
+{
+  "editor": {
+    "header": {
+      "untitled": "Untitled Design",
+      "export": "Export",
+      "share": "Share",
+      "saving": "Saving...",
+      "saved": "Saved"
+    },
+    "toolbar": {
+      "select": "Select",
+      "hand": "Hand Tool",
+      "zoom_in": "Zoom In",
+      "zoom_out": "Zoom Out",
+      "undo": "Undo",
+      "redo": "Redo"
+    },
+    "panels": {
+      "assets": "Assets",
+      "layers": "Layers",
+      "design": "Design",
+      "text": "Text",
+      "upload": "Uploads",
+      "elements": "Elements"
+    },
+    "properties": {
+      "no_selection": "No Selection",
+      "select_object": "Select an object to edit properties",
+      "typography": "Typography",
+      "fill": "Fill",
+      "stroke": "Stroke",
+      "opacity": "Opacity",
+      "position": "Position",
+      "alignment": "Alignment",
+      "arrange": "Arrange",
+      "bring_front": "Bring to Front",
+      "send_back": "Send to Back",
+      "width": "W",
+      "height": "H",
+      "x": "X",
+      "y": "Y"
+    },
+    "layers": {
+      "empty": "No layers",
+      "visible": "Toggle Visibility",
+      "locked": "Toggle Lock",
+      "delete": "Delete"
+    },
+    "assets": {
+      "upload_image": "Upload Image",
+      "search_placeholder": "Search assets...",
+      "no_assets": "No assets found",
+      "drop_files": "Drop files here"
+    }
+  }
+}
