@@ -177,14 +177,14 @@ export default function AssetLibrary({ refreshKey }: { refreshKey?: number }) {
   if (loading) {
     return (
       <div className="flex justify-center p-4">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
       </div>
     )
   }
 
   if (assets.length === 0) {
     return (
-      <div className="p-4 text-center text-sm text-gray-500">
+      <div className="p-4 text-center text-sm text-zinc-500">
         No images found
       </div>
     )
@@ -204,9 +204,10 @@ export default function AssetLibrary({ refreshKey }: { refreshKey?: number }) {
           {assets.map((asset) => (
             <SortableAssetItem key={asset.key} id={asset.key}>
               <div
-                className="group relative cursor-pointer overflow-hidden rounded-md border border-gray-200 bg-white transition-colors hover:border-blue-400"
+                className="group relative cursor-pointer overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 transition-colors hover:border-blue-500"
                 onClick={() => addImageToCanvas(asset.url)}
               >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={asset.url}
                   alt="Asset"
@@ -230,8 +231,8 @@ export default function AssetLibrary({ refreshKey }: { refreshKey?: number }) {
                 </button>
 
                 {addingImage === asset.url && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/50">
-                    <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/50">
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
                   </div>
                 )}
               </div>

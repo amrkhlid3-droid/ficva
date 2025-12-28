@@ -2,66 +2,160 @@
 
 import { useRef, useState } from "react"
 import { useEditorStore } from "@/store/useEditorStore"
-import { Rect, Circle, IText } from "fabric"
+import { Rect, Circle, IText, Triangle, Line, Path } from "fabric"
 import {
   Square,
   Circle as CircleIcon,
+  Triangle as TriangleIcon,
+  Minus,
+  ArrowRight,
   Image as ImageIcon,
   Type,
   LayoutGrid,
-  ChevronLeft,
+  MousePointer2,
+  Pencil,
 } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Slider } from "@/components/ui/slider"
+import { Label } from "@/components/ui/label"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
-import AssetLibrary from "@/components/editor/AssetLibrary"
 
 export default function Toolbar() {
-  const { canvas, history } = useEditorStore()
+  const {
+    canvas,
+    history,
+    activeSidebar,
+    setActiveSidebar,
+    isDrawingMode,
+    toggleDrawingMode,
+    brushColor,
+    setBrushColor,
+    brushWidth,
+    setBrushWidth,
+  } = useEditorStore()
+
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [showAssets, setShowAssets] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const addRectangle = () => {
-    // ... (unchanged)
+  // --- Shape Helpers ---
+  const addShape = (
+    type: "rect" | "circle" | "triangle" | "line" | "arrow"
+  ) => {
     if (!canvas) return
-    const rect = new Rect({
-      left: 100,
-      top: 100,
-      fill: "#ff0000",
-      width: 100,
-      height: 100,
-    })
-    const command = new AddObjectCommand(canvas, rect)
-    history.execute(command)
+    let object
+
+    const center = canvas.getCenterPoint()
+    // Add some random offset so they don't stack perfectly
+    const offset = Math.random() * 20 - 10
+    const left = center.x + offset
+    const top = center.y + offset
+
+    switch (type) {
+      case "rect":
+        object = new Rect({
+          left,
+          top,
+          fill: "#ff0000",
+          width: 100,
+          height: 100,
+        })
+        break
+      case "circle":
+        object = new Circle({ left, top, fill: "#00ff00", radius: 50 })
+        break
+      case "triangle":
+        object = new Triangle({
+          left,
+          top,
+          fill: "#0000ff",
+          width: 100,
+          height: 100,
+        })
+        break
+      case "line":
+        object = new Line([0, 0, 100, 0], {
+          left,
+          top,
+          stroke: "#000000",
+          strokeWidth: 4,
+        })
+        break
+      case "arrow":
+        // Simple arrow path
+        object = new Path("M 0 0 L 100 0 M 90 -5 L 100 0 L 90 5", {
+          left,
+          top,
+          stroke: "#000000",
+          strokeWidth: 4,
+          fill: "",
+          strokeLineCap: "round",
+          strokeLineJoin: "round",
+        })
+        break
+    }
+
+    if (object) {
+      const command = new AddObjectCommand(canvas, object)
+      history.execute(command)
+    }
   }
 
-  const addCircle = () => {
-    // ... (unchanged)
+  // --- Text Helpers ---
+  const addText = (style: "heading" | "subheading" | "body") => {
     if (!canvas) return
-    const circle = new Circle({
-      left: 250,
-      top: 100,
-      fill: "#00ff00",
-      radius: 50,
-    })
-    const command = new AddObjectCommand(canvas, circle)
-    history.execute(command)
-  }
 
-  const addText = () => {
-    // ... (unchanged)
-    if (!canvas) return
-    const text = new IText("Hello Text", {
+    // Default options
+    let textContent = "Text"
+    let fontSize = 40
+    let fontWeight: string | number = "normal"
+
+    switch (style) {
+      case "heading":
+        fontSize = 64
+        fontWeight = "bold"
+        textContent = "Heading"
+        break
+      case "subheading":
+        fontSize = 48
+        fontWeight = 600
+        textContent = "Subheading"
+        break
+      case "body":
+        fontSize = 24
+        fontWeight = "normal"
+        textContent = "Body Text"
+        break
+    }
+
+    const text = new IText(textContent, {
       left: 100,
       top: 200,
-      fontFamily: "Arial",
+      fontFamily: "Inter, sans-serif",
       fill: "#333333",
-      fontSize: 36,
+      fontSize,
+      fontWeight,
     })
     const command = new AddObjectCommand(canvas, text)
     history.execute(command)
   }
 
+  // --- Upload Helper ---
   const handleUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
@@ -97,9 +191,8 @@ export default function Toolbar() {
 
       await Promise.all(uploadPromises)
 
-      // 3. Success: Refresh library and show it
-      setRefreshKey((prev) => prev + 1)
-      setShowAssets(true)
+      // 3. Success: Open assets sidebar
+      setActiveSidebar("assets")
 
       // Reset file input
       if (fileInputRef.current) {
@@ -113,110 +206,204 @@ export default function Toolbar() {
     }
   }
 
-  if (showAssets) {
-    return (
-      <aside className="z-10 flex h-full w-full flex-col border-r bg-white">
-        <div className="flex items-center gap-2 border-b p-4">
-          <button
-            onClick={() => setShowAssets(false)}
-            className="rounded-full p-1 hover:bg-gray-100"
-          >
-            <ChevronLeft className="h-5 w-5 text-gray-600" />
-          </button>
-          <h3 className="font-semibold text-gray-700">My Uploads</h3>
-        </div>
-        <div className="flex-1 overflow-x-hidden overflow-y-auto">
-          <AssetLibrary refreshKey={refreshKey} />
-        </div>
-        <div className="border-t p-4">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {isUploading ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              <ImageIcon className="h-4 w-4" />
-            )}
-            <span>{isUploading ? "Uploading..." : "Upload New"}</span>
-          </button>
-        </div>
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          accept="image/*"
-          multiple
-          onChange={handleUploadImage}
-        />
-      </aside>
-    )
-  }
+  // --- Components ---
+  const ToolButton = ({
+    onClick,
+    icon: Icon,
+    label,
+    active = false,
+    disabled = false,
+    className,
+  }: {
+    onClick?: () => void
+    icon: React.ElementType
+    label: string
+    active?: boolean
+    disabled?: boolean
+    className?: string
+  }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
+            active
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          } ${disabled ? "cursor-not-allowed opacity-50" : ""} ${className}`}
+        >
+          <Icon className="h-5 w-5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="right"
+        className="border-zinc-700 bg-zinc-800 text-white"
+      >
+        <p>{label}</p>
+      </TooltipContent>
+    </Tooltip>
+  )
 
   return (
-    <aside className="z-10 flex h-full w-full flex-col bg-white dark:bg-zinc-900">
-      <div className="border-b p-4">
-        <h3 className="font-semibold text-gray-700">Tools</h3>
-      </div>
-      <div className="flex flex-col gap-2 p-4">
-        {/* ... shapes buttons ... */}
-        <button
-          onClick={addRectangle}
-          className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:border-blue-400 hover:bg-gray-100"
-        >
-          <Square className="h-5 w-5" />
-          <span>Add Rectangle</span>
-        </button>
+    <aside className="bg-background z-10 flex h-full w-16 flex-col border-r">
+      <TooltipProvider>
+        <div className="flex flex-col items-center gap-4 py-4">
+          {/* Select Tool */}
+          <ToolButton
+            onClick={() => {
+              if (isDrawingMode) toggleDrawingMode(false)
+              // Select tool logic? Usually just disabling others.
+            }}
+            icon={MousePointer2}
+            label="Select"
+            active={!isDrawingMode}
+          />
 
-        <button
-          onClick={addCircle}
-          className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:border-blue-400 hover:bg-gray-100"
-        >
-          <CircleIcon className="h-5 w-5" />
-          <span>Add Circle</span>
-        </button>
+          {/* Drawing Tool */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <div>
+                {" "}
+                {/* Wrap in div to avoid button-in-button issues if TooltipTrigger messes up? Shadcn TooltipTrigger asChild works fine usually */}
+                <ToolButton
+                  icon={Pencil}
+                  label="Drawing"
+                  active={isDrawingMode}
+                  onClick={() => toggleDrawingMode(!isDrawingMode)}
+                />
+              </div>
+            </PopoverTrigger>
+            <PopoverContent side="right" className="w-64" align="start">
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <h4 className="leading-none font-medium">Drawing Settings</h4>
+                  <p className="text-muted-foreground text-sm">
+                    Configure your brush.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="width">Width</Label>
+                    <span className="text-muted-foreground hover:border-border w-12 rounded-md border border-transparent px-2 py-0.5 text-right text-sm">
+                      {brushWidth}px
+                    </span>
+                  </div>
+                  <Slider
+                    id="width"
+                    max={50}
+                    min={1}
+                    step={1}
+                    value={[brushWidth]}
+                    onValueChange={(value) => setBrushWidth(value[0] ?? 5)}
+                    className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="color">Color</Label>
+                  <div className="flex gap-2">
+                    {[
+                      "#000000",
+                      "#ff0000",
+                      "#00ff00",
+                      "#0000ff",
+                      "#ffffff",
+                    ].map((c) => (
+                      <button
+                        key={c}
+                        className={`h-6 w-6 rounded-full border border-gray-200 ${brushColor === c ? "ring-primary ring-2 ring-offset-2" : ""}`}
+                        style={{ backgroundColor: c }}
+                        onClick={() => setBrushColor(c)}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={brushColor}
+                      onChange={(e) => setBrushColor(e.target.value)}
+                      className="h-6 w-6 cursor-pointer overflow-hidden rounded-full border-none bg-transparent p-0"
+                    />
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
 
-        <button
-          onClick={addText}
-          className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:border-blue-400 hover:bg-gray-100"
-        >
-          <Type className="h-5 w-5" />
-          <span>Add Text</span>
-        </button>
+          <div className="bg-border h-px w-8" />
 
-        <div className="my-2 border-t border-gray-100"></div>
+          {/* Shapes Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div>
+                <ToolButton icon={Square} label="Shapes" />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start">
+              <DropdownMenuItem onClick={() => addShape("rect")}>
+                <Square className="mr-2 h-4 w-4" /> Rectangle
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addShape("circle")}>
+                <CircleIcon className="mr-2 h-4 w-4" /> Circle
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addShape("triangle")}>
+                <TriangleIcon className="mr-2 h-4 w-4" /> Triangle
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addShape("line")}>
+                <Minus className="mr-2 h-4 w-4" /> Line
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addShape("arrow")}>
+                <ArrowRight className="mr-2 h-4 w-4" /> Arrow
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        <button
-          onClick={() => setShowAssets(true)}
-          className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:border-blue-400 hover:bg-gray-100"
-        >
-          <LayoutGrid className="h-5 w-5" />
-          <span>My Uploads</span>
-        </button>
+          {/* Text Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div>
+                <ToolButton icon={Type} label="Text" />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start">
+              <DropdownMenuItem onClick={() => addText("heading")}>
+                <span className="text-xl font-bold">Heading</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addText("subheading")}>
+                <span className="text-lg font-semibold">Subheading</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addText("body")}>
+                <span className="text-sm">Body Text</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isUploading}
-          className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-gray-700 transition-colors hover:border-blue-400 hover:bg-gray-100 disabled:opacity-50"
-        >
-          {isUploading ? (
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-          ) : (
-            <ImageIcon className="h-5 w-5" />
-          )}
-          <span>{isUploading ? "Uploading..." : "Upload Image"}</span>
-        </button>
+          <div className="bg-border h-px w-8" />
 
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          accept="image/*"
-          multiple
-          onChange={handleUploadImage}
-        />
-      </div>
+          {/* Assets & Upload */}
+          <ToolButton
+            onClick={() =>
+              setActiveSidebar(activeSidebar === "assets" ? "none" : "assets")
+            }
+            icon={LayoutGrid}
+            label="Assets"
+            active={activeSidebar === "assets"}
+          />
+          <ToolButton
+            onClick={() => fileInputRef.current?.click()}
+            icon={ImageIcon}
+            label={isUploading ? "Uploading..." : "Upload Image"}
+            disabled={isUploading}
+          />
+        </div>
+      </TooltipProvider>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        multiple
+        onChange={handleUploadImage}
+      />
     </aside>
   )
 }

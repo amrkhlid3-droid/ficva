@@ -2,16 +2,14 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable"
+
 import Toolbar from "@/components/editor/Toolbar"
 import Header from "@/components/editor/Header"
 import FabricCanvas from "@/components/editor/FabricCanvas"
 import RightSidebar from "@/components/editor/RightSidebar"
+import LeftSidebar from "@/components/editor/LeftSidebar"
 import ContextMenu from "@/components/editor/ContextMenu"
+import SlideList from "@/components/editor/slides/SlideList"
 import { useEditorStore } from "@/store/useEditorStore"
 
 interface ProjectData {
@@ -22,7 +20,7 @@ interface ProjectData {
 
 export default function EditorPage() {
   const params = useParams()
-  const { canvas } = useEditorStore()
+  const { canvas, activeSidebar } = useEditorStore()
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
 
   // Fetch project data (JSON)
@@ -35,6 +33,10 @@ export default function EditorPage() {
         })
         .then((data) => {
           setProjectData(data)
+          // Sync name to store
+          useEditorStore
+            .getState()
+            .setProjectName(data.name || "Untitled Design")
         })
         .catch((err) => console.error(err))
     }
@@ -44,23 +46,69 @@ export default function EditorPage() {
   // We use a flag 'loaded' to prevent re-loading if not needed,
   // though simple check is effectively: if canvas is empty? or just once on mount?
   // Use a ref or simple check to ensure we only load once per project load.
+  // Load data into Store & Canvas
   useEffect(() => {
+    if (!projectData || !canvas) return
+
+    // Initialize Store with Project ID
+    useEditorStore.getState().setProjectId(projectData.id)
+
+    // Check if data is new multi-page structure or legacy single-page
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json = projectData.json as any
+
+    // Check for "pages" key indicating new structure
     if (
-      canvas &&
-      projectData &&
-      projectData.json &&
-      Object.keys(projectData.json).length > 0
+      json &&
+      json.pages &&
+      Array.isArray(json.pages) &&
+      json.pages.length > 0
     ) {
-      // Avoid overwriting if user already started editing?
-      // For now, assume this runs on initial load.
-      // We might check if canvas is empty.
-      const objects = canvas.getObjects()
-      if (objects.length === 0) {
-        canvas.loadFromJSON(projectData.json, () => {
+      console.log("Loading multi-page project...")
+      const { pages, activePageId } = json
+
+      // Update Store
+      useEditorStore.setState({
+        pages: pages,
+        activePageId: activePageId || pages[0].id,
+      })
+
+      // Load active page into canvas
+      const activePage = pages.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (p: any) => p.id === (activePageId || pages[0].id)
+      )
+      if (activePage && activePage.json) {
+        canvas.loadFromJSON(activePage.json).then(() => {
+          if (!canvas.getElement()) return // Check if disposed
           canvas.requestRenderAll()
-          console.log("Project loaded into canvas")
+          useEditorStore.getState().syncLayers(canvas)
         })
       }
+    } else if (json && Object.keys(json).length > 0) {
+      // Fallback: Legacy single page project
+      // Convert to multi-page structure in Store (but don't save to DB until user clicks save)
+      console.log("Loading legacy single-page project...")
+
+      // Just load directly into canvas as before
+      canvas.loadFromJSON(json).then(() => {
+        if (!canvas.getElement()) return // Check if disposed
+        canvas.requestRenderAll()
+        useEditorStore.getState().syncLayers(canvas)
+
+        // Also update store to have at least one page with this content
+        // effectively "migrating" it in memory
+        const pageId = crypto.randomUUID()
+        useEditorStore.setState({
+          pages: [{ id: pageId, json: json }],
+          activePageId: pageId,
+        })
+      })
+    } else {
+      // Empty project
+      console.log("Empty project, initializing defaults...")
+      // Store already has default empty page from initialization if needed,
+      // or we can ensure it here.
     }
   }, [canvas, projectData])
 
@@ -69,36 +117,34 @@ export default function EditorPage() {
       {/* Header (Top Layer) */}
       <Header />
 
-      {/* Main Workspace with Resizable Panels */}
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup
-          direction="horizontal"
-          className="h-full items-stretch"
-        >
-          {/* Left Sidebar (Resources/Tools) */}
-          <ResizablePanel defaultSize={25} className="border-r">
-            <Toolbar />
-          </ResizablePanel>
+      {/* Main Workspace with Fixed Layout */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Fixed Toolbar (Left Strip) */}
+        <Toolbar />
 
-          <ResizableHandle />
+        {/* Left Sidebar (Collapsible, Fixed Width) */}
+        {activeSidebar !== "none" && (
+          <div className="bg-background flex w-[300px] flex-col border-r">
+            <LeftSidebar />
+          </div>
+        )}
 
-          {/* Center Canvas */}
-          <ResizablePanel defaultSize={50}>
-            <main className="relative flex h-full w-full flex-1 flex-col overflow-hidden bg-gray-100 dark:bg-zinc-900/50">
-              <div className="relative flex-1">
-                <FabricCanvas />
-                <ContextMenu />
-              </div>
-            </main>
-          </ResizablePanel>
+        {/* Center Canvas (Flexible) */}
+        <main className="bg-muted/30 relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="relative flex-1">
+            <FabricCanvas />
+            <ContextMenu />
+          </div>
+          {/* Bottom Filmstrip */}
+          <div className="bg-background h-32 shrink-0 border-t">
+            <SlideList />
+          </div>
+        </main>
 
-          <ResizableHandle />
-
-          {/* Right Sidebar (Properties/Layers) */}
-          <ResizablePanel defaultSize={25} className="border-l">
-            <RightSidebar />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        {/* Right Sidebar (Fixed Width) */}
+        <div className="bg-background flex w-[300px] flex-col border-l">
+          <RightSidebar />
+        </div>
       </div>
     </div>
   )

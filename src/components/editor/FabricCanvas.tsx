@@ -8,10 +8,30 @@ import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObject
 
 export default function FabricCanvas() {
   const canvasEl = useRef<HTMLCanvasElement>(null)
-  const { setCanvas, history, syncLayers } = useEditorStore()
+
+  // Optimize selectors to avoid re-rendering on every store change
+  const setCanvas = useEditorStore((s) => s.setCanvas)
+  const history = useEditorStore((s) => s.history)
+  const syncLayers = useEditorStore((s) => s.syncLayers)
 
   // Track start state for drag operations
   const dragStartRef = useRef<Partial<FabricObject> | null>(null)
+
+  // Drawing Mode Sync
+  const isDrawingMode = useEditorStore((s) => s.isDrawingMode)
+  const brushColor = useEditorStore((s) => s.brushColor)
+  const brushWidth = useEditorStore((s) => s.brushWidth)
+
+  useEffect(() => {
+    const canvas = useEditorStore.getState().canvas
+    if (!canvas) return
+
+    canvas.isDrawingMode = isDrawingMode
+    if (canvas.freeDrawingBrush) {
+      canvas.freeDrawingBrush.color = brushColor
+      canvas.freeDrawingBrush.width = brushWidth
+    }
+  }, [isDrawingMode, brushColor, brushWidth])
 
   useEffect(() => {
     if (!canvasEl.current) return
@@ -28,6 +48,11 @@ export default function FabricCanvas() {
     })
 
     setCanvas(canvas)
+
+    // Load existing page content if available (e.g. after remount)
+    // REMOVED: Managed by EditorPage to prevent race conditions with async fetch
+    // const state = useEditorStore.getState()
+    // if (state.activePageId) { ... }
 
     const updateSelection = () => {
       setCanvas(canvas) // Trigger re-render to update UI if needed
@@ -87,6 +112,28 @@ export default function FabricCanvas() {
     canvas.on("object:removed", () => syncLayers(canvas))
     canvas.on("object:modified", () => syncLayers(canvas))
 
+    // Thumbnail Generation Debounce
+    let thumbnailTimeout: NodeJS.Timeout
+    const updateThumbnail = () => {
+      clearTimeout(thumbnailTimeout)
+      thumbnailTimeout = setTimeout(() => {
+        const dataURL = canvas.toDataURL({
+          format: "png",
+          quality: 0.5,
+          multiplier: 0.2, // Thumbnail scale
+        })
+        const { activePageId, updatePageThumbnail } = useEditorStore.getState()
+        if (activePageId) {
+          updatePageThumbnail(activePageId, dataURL)
+        }
+      }, 1000)
+    }
+
+    canvas.on("object:added", updateThumbnail)
+    canvas.on("object:removed", updateThumbnail)
+    canvas.on("object:modified", updateThumbnail)
+    // Also update on initial load? Maybe not needed if empty.
+
     // Initial sync
     syncLayers(canvas)
 
@@ -141,6 +188,7 @@ export default function FabricCanvas() {
     window.addEventListener("keydown", handleKeyDown)
 
     return () => {
+      clearTimeout(thumbnailTimeout)
       window.removeEventListener("keydown", handleKeyDown)
       canvas.dispose()
       setCanvas(null)
@@ -148,8 +196,17 @@ export default function FabricCanvas() {
   }, [setCanvas, history, syncLayers])
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-auto bg-gray-100">
-      <div className="shadow-2xl">
+    <div className="relative flex h-full w-full items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-950">
+      {/* Dot Pattern Background */}
+      <div
+        className="pointer-events-none absolute inset-0 text-zinc-300 opacity-50 dark:text-zinc-700 dark:opacity-20"
+        style={{
+          backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
+          backgroundSize: "20px 20px",
+        }}
+      ></div>
+
+      <div className="z-0 border border-zinc-200 shadow-2xl dark:border-zinc-800">
         <canvas ref={canvasEl} />
       </div>
     </div>

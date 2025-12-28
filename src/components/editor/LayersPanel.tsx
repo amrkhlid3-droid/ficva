@@ -18,13 +18,14 @@ import { SortableLayerItem } from "./SortableLayerItem"
 import { ReorderCommand } from "@/lib/editor/history/commands/ReorderCommand"
 
 export default function LayersPanel() {
-  const { layers, canvas, selectedObjects, syncLayers, history } = useEditorStore()
+  const { layers, canvas, selectedObjects, syncLayers, history } =
+    useEditorStore()
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-        activationConstraint: {
-            distance: 8,
-        }
+      activationConstraint: {
+        distance: 8,
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -37,6 +38,7 @@ export default function LayersPanel() {
     if (!obj) return
 
     // Direct modification for now - TODO: Command
+    // eslint-disable-next-line react-hooks/immutability
     obj.visible = !obj.visible
 
     if (!obj.visible) {
@@ -55,17 +57,17 @@ export default function LayersPanel() {
     const isLocked = !obj.selectable
 
     obj.set({
-        lockMovementX: !isLocked,
-        lockMovementY: !isLocked,
-        lockRotation: !isLocked,
-        lockScalingX: !isLocked,
-        lockScalingY: !isLocked,
-        selectable: !isLocked,
-        evented: !isLocked
+      lockMovementX: !isLocked,
+      lockMovementY: !isLocked,
+      lockRotation: !isLocked,
+      lockScalingX: !isLocked,
+      lockScalingY: !isLocked,
+      selectable: !isLocked,
+      evented: !isLocked,
     })
 
     if (!obj.selectable) {
-        canvas?.discardActiveObject()
+      canvas?.discardActiveObject()
     }
 
     canvas?.requestRenderAll()
@@ -81,35 +83,42 @@ export default function LayersPanel() {
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
-      const { active, over } = event
-      if (active.id !== over?.id && canvas) {
-          // Find visual indices
-          const oldIndex = layers.findIndex(l => (l as any).id === active.id)
-          const newIndex = layers.findIndex(l => (l as any).id === over?.id)
+    const { active, over } = event
+    if (active.id !== over?.id && canvas) {
+      // Find visual indices
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const oldIndex = layers.findIndex((l) => (l as any).id === active.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newIndex = layers.findIndex((l) => (l as any).id === over?.id)
 
-          if (oldIndex === -1 || newIndex === -1) return
+      if (oldIndex === -1 || newIndex === -1) return
 
-          // Convert to Fabric Indices (0 = bottom, layers is reversed)
-          const count = layers.length
-          const oldFabricIndex = count - 1 - oldIndex
-          const newFabricIndex = count - 1 - newIndex
+      // Convert to Fabric Indices (0 = bottom, layers is reversed)
+      const count = layers.length
+      const oldFabricIndex = count - 1 - oldIndex
+      const newFabricIndex = count - 1 - newIndex
 
-          const obj = layers[oldIndex]
-          if (!obj) return
+      const obj = layers[oldIndex]
+      if (!obj) return
 
-          // Optimistic update? No, let syncLayers handle it via command execution?
-          // Command execution fires 'modified' which calls syncLayers.
-          // But reordering is instant.
+      // Optimistic update? No, let syncLayers handle it via command execution?
+      // Command execution fires 'modified' which calls syncLayers.
+      // But reordering is instant.
 
-          const command = new ReorderCommand(canvas, obj, oldFabricIndex, newFabricIndex)
-          history.execute(command)
-          // syncLayers() is called by the event in command
-      }
+      const command = new ReorderCommand(
+        canvas,
+        obj,
+        oldFabricIndex,
+        newFabricIndex
+      )
+      history.execute(command)
+      // syncLayers() is called by the event in command
+    }
   }
 
   if (layers.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-4 text-gray-400">
+      <div className="flex h-full flex-col items-center justify-center p-4 text-zinc-500">
         <Box className="mb-2 h-12 w-12 opacity-20" />
         <p className="text-sm">No layers yet</p>
       </div>
@@ -124,26 +133,28 @@ export default function LayersPanel() {
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={layers.map(l => (l as any).id)}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          items={layers.map((l) => (l as any).id)}
           strategy={verticalListSortingStrategy}
         >
           {layers.map((obj, i) => {
-              const id = (obj as any).id
-              if (!id) return null // Should not happen given store sync
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const id = (obj as any).id
+            if (!id) return null // Should not happen given store sync
 
-              const isSelected = selectedObjects.includes(obj)
+            const isSelected = selectedObjects.includes(obj)
 
-              return (
-                  <SortableLayerItem
-                    key={id}
-                    id={id}
-                    obj={obj}
-                    isSelected={isSelected}
-                    onSelect={() => selectLayer(i)}
-                    onToggleVisibility={(e) => toggleVisibility(e, i)}
-                    onToggleLock={(e) => toggleLock(e, i)}
-                  />
-              )
+            return (
+              <SortableLayerItem
+                key={id}
+                id={id}
+                obj={obj}
+                isSelected={isSelected}
+                onSelect={() => selectLayer(i)}
+                onToggleVisibility={(e) => toggleVisibility(e, i)}
+                onToggleLock={(e) => toggleLock(e, i)}
+              />
+            )
           })}
         </SortableContext>
       </DndContext>

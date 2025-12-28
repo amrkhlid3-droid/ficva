@@ -1,6 +1,15 @@
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { GripVertical, Eye, EyeOff, Lock, Unlock, Type as TypeIcon, Square, Circle } from "lucide-react"
+import {
+  GripVertical,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
+  Type as TypeIcon,
+  Square,
+  Circle,
+} from "lucide-react"
 import { FabricObject } from "fabric"
 
 interface SortableLayerItemProps {
@@ -61,8 +70,8 @@ export function SortableLayerItem({
       style={style}
       className={`group flex items-center justify-between rounded-md border p-2 text-sm transition-colors ${
         isSelected
-          ? "border-blue-500 bg-blue-50"
-          : "border-gray-200 bg-white hover:bg-gray-50"
+          ? "border-blue-600 bg-blue-900/30 text-blue-100"
+          : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
       }`}
       onClick={onSelect}
     >
@@ -71,23 +80,26 @@ export function SortableLayerItem({
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab text-gray-400 hover:text-gray-600"
+          className="cursor-grab text-zinc-500 hover:text-zinc-300"
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical className="h-4 w-4" />
         </div>
 
         {/* Type Icon */}
-        <div className="text-gray-500">{getIcon()}</div>
+        <div className="text-zinc-500">{getIcon()}</div>
 
         {/* Label */}
         <span className="truncate font-medium">{label}</span>
       </div>
 
-      <div className="flex items-center gap-1 text-gray-500 opacity-0 transition-opacity group-hover:opacity-100 data-[selected=true]:opacity-100" data-selected={isSelected}>
+      <div
+        className="flex items-center gap-1 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 data-[selected=true]:opacity-100"
+        data-selected={isSelected}
+      >
         <button
           onClick={onToggleLock}
-          className={`rounded p-1 ${isLocked ? "text-red-500" : "hover:bg-gray-200"}`}
+          className={`rounded p-1 ${isLocked ? "text-red-500" : "hover:bg-zinc-700 hover:text-white"}`}
           title={isLocked ? "Unlock" : "Lock"}
         >
           {isLocked ? (
@@ -99,7 +111,7 @@ export function SortableLayerItem({
 
         <button
           onClick={onToggleVisibility}
-          className={`rounded p-1 ${!isVisible ? "text-gray-400" : "hover:bg-gray-200"}`}
+          className={`rounded p-1 ${!isVisible ? "text-zinc-600" : "hover:bg-zinc-700 hover:text-white"}`}
           title={isVisible ? "Hide" : "Show"}
         >
           {isVisible ? (

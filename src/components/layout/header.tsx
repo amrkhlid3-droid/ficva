@@ -6,6 +6,7 @@ import { useSession, signOut } from "next-auth/react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ThemeToggle } from "@/components/ThemeToggle"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +82,7 @@ export function Header() {
           <Bell className="h-5 w-5" />
           <span className="sr-only">Notifications</span>
         </Button>
+        <ThemeToggle />
         <Button
           className="ml-2 bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white transition-opacity hover:opacity-90"
           onClick={createProject}

@@ -2,9 +2,12 @@
 
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
+import { ModifyCanvasCommand } from "@/lib/editor/history/commands/ModifyCanvasCommand"
 import { BringToFrontCommand } from "@/lib/editor/history/commands/BringToFrontCommand"
 import { SendToBackCommand } from "@/lib/editor/history/commands/SendToBackCommand"
 import { useRef, useState, useEffect } from "react"
+import { NumberInput } from "./properties/NumberInput"
+import { Color } from "fabric"
 
 export default function PropertiesPanel() {
   const { selectedObjects, canvas, history } = useEditorStore()
@@ -27,10 +30,199 @@ export default function PropertiesPanel() {
   }, [activeObjectRef, activeObjectRef?.opacity])
 
   if (!selectedObjects || selectedObjects.length === 0) {
+    if (!canvas) return null
+
+    // Canvas Properties View
     return (
-      <div className="flex h-full w-full flex-col bg-white">
-        <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
-          Select an object to edit
+      <div className="bg-background text-foreground flex h-full w-full flex-col">
+        <div className="space-y-6 p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+              Canvas
+            </div>
+          </div>
+
+          {/* Canvas Dimensions */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-muted-foreground text-[10px] uppercase">
+                Width
+              </label>
+              <NumberInput
+                value={canvas.width}
+                onChange={(newWidth) => {
+                  const command = new ModifyCanvasCommand(
+                    canvas,
+                    { width: newWidth },
+                    { width: canvas.width }
+                  )
+                  history.execute(command)
+                }}
+                className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 uppercase">
+                Height
+              </label>
+              <NumberInput
+                value={canvas.height}
+                onChange={(newHeight) => {
+                  const command = new ModifyCanvasCommand(
+                    canvas,
+                    { height: newHeight },
+                    { height: canvas.height }
+                  )
+                  history.execute(command)
+                }}
+                className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Canvas Background */}
+          <div className="space-y-2">
+            <label className="text-muted-foreground block text-xs font-medium uppercase">
+              Background Color
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                "#ffffff",
+                "#f8f9fa",
+                "#18181b", // zinc-950
+                "#27272a", // zinc-800
+                "#ff0000",
+                "#00ff00",
+                "#0000ff",
+                "transparent",
+              ].map((color) => (
+                <button
+                  key={color}
+                  onClick={() => {
+                    // checks if color is transparent, use null or empty string if fabric requires it,
+                    // though 'transparent' string usually works or rgba(0,0,0,0)
+                    const bgVal = color === "transparent" ? "" : color
+                    const command = new ModifyCanvasCommand(
+                      canvas,
+                      { backgroundColor: bgVal },
+                      { backgroundColor: canvas.backgroundColor }
+                    )
+                    history.execute(command)
+                  }}
+                  className={`border-border h-8 w-8 rounded-full border shadow-sm transition-transform hover:scale-110 ${color === "transparent" ? "bg-muted text-muted-foreground flex items-center justify-center text-[10px]" : ""}`}
+                  style={{
+                    backgroundColor:
+                      color !== "transparent" ? color : undefined,
+                  }}
+                  title={color}
+                >
+                  {color === "transparent" && "None"}
+                </button>
+              ))}
+              <input
+                type="color"
+                className="h-8 w-8 cursor-pointer border-0 bg-transparent p-0"
+                value={(() => {
+                  if (
+                    !canvas.backgroundColor ||
+                    canvas.backgroundColor === "transparent"
+                  )
+                    return "#ffffff"
+                  if (typeof canvas.backgroundColor === "string") {
+                    const hex = new Color(canvas.backgroundColor).toHex()
+                    return hex.startsWith("#") ? hex : `#${hex}`
+                  }
+                  return "#ffffff"
+                })()}
+                onChange={(e) => {
+                  const newHex = e.target.value
+                  const currentBg = canvas.backgroundColor
+                  let alpha = 1
+                  if (
+                    currentBg &&
+                    currentBg !== "transparent" &&
+                    typeof currentBg === "string"
+                  ) {
+                    alpha = new Color(currentBg).getAlpha()
+                  }
+                  const newColor = new Color(newHex)
+                  newColor.setAlpha(alpha)
+
+                  const command = new ModifyCanvasCommand(
+                    canvas,
+                    { backgroundColor: newColor.toRgba() },
+                    { backgroundColor: canvas.backgroundColor }
+                  )
+                  history.execute(command)
+                }}
+              />
+            </div>
+
+            {/* Background Opacity Slider */}
+            <div className="mt-2 flex items-center gap-2">
+              <label className="text-muted-foreground w-12 text-[10px] uppercase">
+                Alpha
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                className="accent-primary flex-1"
+                value={(() => {
+                  if (
+                    !canvas.backgroundColor ||
+                    canvas.backgroundColor === "transparent"
+                  )
+                    return 0
+                  if (typeof canvas.backgroundColor === "string") {
+                    return new Color(canvas.backgroundColor).getAlpha()
+                  }
+                  return 1
+                })()}
+                onChange={(e) => {
+                  const newAlpha = parseFloat(e.target.value)
+                  const currentBg = canvas.backgroundColor
+
+                  // If currently transparent or not set, default to white base
+                  let baseColor = new Color("#ffffff")
+
+                  if (
+                    currentBg &&
+                    currentBg !== "transparent" &&
+                    typeof currentBg === "string"
+                  ) {
+                    baseColor = new Color(currentBg)
+                  }
+
+                  baseColor.setAlpha(newAlpha)
+
+                  const command = new ModifyCanvasCommand(
+                    canvas,
+                    { backgroundColor: baseColor.toRgba() },
+                    { backgroundColor: canvas.backgroundColor }
+                  )
+                  history.execute(command)
+                }}
+              />
+              <span className="text-muted-foreground w-8 text-right text-[10px]">
+                {Math.round(
+                  (() => {
+                    if (
+                      !canvas.backgroundColor ||
+                      canvas.backgroundColor === "transparent"
+                    )
+                      return 0
+                    if (typeof canvas.backgroundColor === "string") {
+                      return new Color(canvas.backgroundColor).getAlpha()
+                    }
+                    return 1
+                  })() * 100
+                )}
+                %
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -85,24 +277,86 @@ export default function PropertiesPanel() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-white">
+    <div className="bg-background text-foreground flex h-full w-full flex-col">
       <div className="space-y-6 p-4">
         {/* Layer Info */}
-        <div className="text-xs font-medium tracking-wider text-gray-500 uppercase">
-          {activeObject.type} Layer
+        <div className="flex items-center justify-between">
+          <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            {activeObject.type} Layer
+          </div>
+          <div className="text-muted-foreground text-xs">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}#
+            {(activeObject as any).name || "unnamed"}
+          </div>
+        </div>
+
+        {/* Geometry Section */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-muted-foreground text-[10px] uppercase">
+              X
+            </label>
+            <NumberInput
+              value={Math.round(activeObject.left || 0)}
+              onChange={(val) => updateProperty("left", val)}
+              className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-muted-foreground text-[10px] uppercase">
+              Y
+            </label>
+            <NumberInput
+              value={Math.round(activeObject.top || 0)}
+              onChange={(val) => updateProperty("top", val)}
+              className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-muted-foreground text-[10px] uppercase">
+              W
+            </label>
+            <NumberInput
+              value={Math.round(
+                (activeObject.width || 0) * (activeObject.scaleX || 1)
+              )}
+              onChange={(newWidth) => {
+                if (activeObject.width) {
+                  updateProperty("scaleX", newWidth / activeObject.width)
+                }
+              }}
+              className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-muted-foreground text-[10px] uppercase">
+              H
+            </label>
+            <NumberInput
+              value={Math.round(
+                (activeObject.height || 0) * (activeObject.scaleY || 1)
+              )}
+              onChange={(newHeight) => {
+                if (activeObject.height) {
+                  updateProperty("scaleY", newHeight / activeObject.height)
+                }
+              }}
+              className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+            />
+          </div>
         </div>
 
         {/* Text Properties Section */}
         {activeObject.type === "i-text" && (
-          <div className="mb-4 space-y-4 border-b border-gray-100 pb-4">
-            <label className="block text-sm font-medium text-gray-700">
+          <div className="mb-4 space-y-4 border-b pb-4">
+            <label className="text-muted-foreground block text-xs font-medium uppercase">
               Typography
             </label>
             <div className="space-y-3">
               {/* Font Family */}
               <div>
                 <select
-                  className="w-full rounded border border-gray-300 bg-white p-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                  className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   value={(activeObject as any).fontFamily || "Arial"}
                   onChange={(e) => updateProperty("fontFamily", e.target.value)}
@@ -125,40 +379,40 @@ export default function PropertiesPanel() {
               {/* Font Size & Weight */}
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <input
-                    type="number"
-                    className="w-full rounded border border-gray-300 bg-white p-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
-                    // Display effective font size: fontSize * scale
-                    value={Math.round(
-                      currentFontSize * (activeObject.scaleY || 1)
-                    )}
-                    onChange={(e) => {
-                      const newSize = parseInt(e.target.value)
-                      if (activeObject && canvas) {
-                        // When changing font size explicitly, reset scale to 1 to make fontSize the source of truth
-                        const originalState = {
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          fontSize: (activeObject as any).fontSize,
-                          scaleX: activeObject.scaleX,
-                          scaleY: activeObject.scaleY,
-                        }
-                        const newState = {
-                          fontSize: newSize,
-                          scaleX: 1,
-                          scaleY: 1,
-                        }
+                  <div className="flex-1">
+                    <NumberInput
+                      className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+                      // Display effective font size: fontSize * scale
+                      value={Math.round(
+                        currentFontSize * (activeObject.scaleY || 1)
+                      )}
+                      onChange={(newSize) => {
+                        if (activeObject && canvas) {
+                          // When changing font size explicitly, reset scale to 1 to make fontSize the source of truth
+                          const originalState = {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            fontSize: (activeObject as any).fontSize,
+                            scaleX: activeObject.scaleX,
+                            scaleY: activeObject.scaleY,
+                          }
+                          const newState = {
+                            fontSize: newSize,
+                            scaleX: 1,
+                            scaleY: 1,
+                          }
 
-                        // Execute command with multiple property changes
-                        const command = new ModifyObjectCommand(
-                          activeObject,
-                          newState,
-                          originalState
-                        )
-                        history.execute(command)
-                      }
-                    }}
-                    placeholder="Size"
-                  />
+                          // Execute command with multiple property changes
+                          const command = new ModifyObjectCommand(
+                            activeObject,
+                            newState,
+                            originalState
+                          )
+                          history.execute(command)
+                        }
+                      }}
+                      placeholder="Size"
+                    />
+                  </div>
                 </div>
                 <button
                   onClick={() =>
@@ -171,7 +425,7 @@ export default function PropertiesPanel() {
                     )
                   }
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  className={`rounded border border-gray-300 px-3 py-1 text-gray-900 ${(activeObject as any).fontWeight === "bold" ? "bg-gray-200 font-bold" : "bg-white"}`}
+                  className={`border-input text-foreground rounded border px-3 py-1 ${(activeObject as any).fontWeight === "bold" ? "bg-muted font-bold" : "hover:bg-muted bg-transparent"}`}
                 >
                   B
                 </button>
@@ -186,7 +440,7 @@ export default function PropertiesPanel() {
                     )
                   }
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  className={`rounded border border-gray-300 px-3 py-1 text-gray-900 italic ${(activeObject as any).fontStyle === "italic" ? "bg-gray-200" : "bg-white"}`}
+                  className={`border-input text-foreground rounded border px-3 py-1 italic ${(activeObject as any).fontStyle === "italic" ? "bg-muted" : "hover:bg-muted bg-transparent"}`}
                 >
                   I
                 </button>
@@ -197,7 +451,7 @@ export default function PropertiesPanel() {
 
         {/* Fill Color Section */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="text-muted-foreground block text-xs font-medium uppercase">
             Fill Color
           </label>
           <div className="flex flex-wrap gap-2">
@@ -213,7 +467,7 @@ export default function PropertiesPanel() {
               <button
                 key={color}
                 onClick={() => updateProperty("fill", color)}
-                className={`h-8 w-8 rounded-full border border-gray-200 shadow-sm transition-transform hover:scale-110 ${color === "transparent" ? "flex items-center justify-center bg-gray-100 text-[10px] text-gray-400" : ""}`}
+                className={`border-border h-8 w-8 rounded-full border shadow-sm transition-transform hover:scale-110 ${color === "transparent" ? "bg-muted text-muted-foreground flex items-center justify-center text-[10px]" : ""}`}
                 style={{
                   backgroundColor: color !== "transparent" ? color : undefined,
                 }}
@@ -227,7 +481,7 @@ export default function PropertiesPanel() {
 
         {/* Stroke Section */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="text-muted-foreground block text-xs font-medium uppercase">
             Stroke
           </label>
           <div className="flex items-center gap-2">
@@ -245,7 +499,7 @@ export default function PropertiesPanel() {
               onChange={(e) =>
                 updateProperty("strokeWidth", parseInt(e.target.value))
               }
-              className="w-20 rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+              className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-20 rounded border px-2 py-1 text-sm focus:ring-1 focus:outline-none"
               placeholder="Width"
             />
           </div>
@@ -253,7 +507,7 @@ export default function PropertiesPanel() {
 
         {/* Opacity Section */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="text-muted-foreground block text-xs font-medium uppercase">
             Opacity
           </label>
           <input
@@ -276,7 +530,7 @@ export default function PropertiesPanel() {
               commitProperty("opacity", val, startVal)
               sliderStartValRef.current = null
             }}
-            className="w-full accent-blue-600"
+            className="accent-primary w-full"
           />
         </div>
 
@@ -286,8 +540,9 @@ export default function PropertiesPanel() {
             or we can implement a specific MoveLayerCommand later.
             Let's keep them as direct actions for now but with safe checks.
         */}
-        <div className="space-y-2 border-t border-gray-100 pt-4">
-          <label className="block text-sm font-medium text-gray-700">
+        {/* Layer Management */}
+        <div className="space-y-2 border-t pt-4">
+          <label className="text-muted-foreground block text-xs font-medium uppercase">
             Layering
           </label>
           <div className="flex gap-2">
@@ -298,7 +553,7 @@ export default function PropertiesPanel() {
                   history.execute(command)
                 }
               }}
-              className="flex-1 rounded bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
+              className="hover:bg-muted border-border text-foreground flex-1 rounded border bg-transparent px-3 py-2 text-xs font-medium transition-colors"
             >
               Bring to Front
             </button>
@@ -309,7 +564,7 @@ export default function PropertiesPanel() {
                   history.execute(command)
                 }
               }}
-              className="flex-1 rounded bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
+              className="hover:bg-muted border-border text-foreground flex-1 rounded border bg-transparent px-3 py-2 text-xs font-medium transition-colors"
             >
               Send to Back
             </button>
@@ -317,8 +572,8 @@ export default function PropertiesPanel() {
         </div>
 
         {/* Debug Info */}
-        <div className="border-t border-gray-100 pt-4">
-          <pre className="overflow-auto text-[10px] text-gray-400">
+        <div className="border-t pt-4">
+          <pre className="text-muted-foreground overflow-auto text-[10px]">
             {selectedObjects.length} object(s) selected
           </pre>
         </div>
