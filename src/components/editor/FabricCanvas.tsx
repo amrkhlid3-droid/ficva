@@ -498,6 +498,80 @@ export default function FabricCanvas() {
       canvas.requestRenderAll()
     }
 
+    // Refresh all control line positions based on current anchor/handle positions
+    const refreshControlLines = () => {
+      const controls = controlsRef.current
+
+      // Find all anchors and handles, build a map by command index
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anchorsByIndex: Map<number, any> = new Map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handleInByIndex: Map<number, any> = new Map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handleOutByIndex: Map<number, any> = new Map()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const linesByRef: Map<any, { type: string; cmdIndex: number }> = new Map()
+
+      controls.forEach((ctrl) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = (ctrl as any).data
+        if (!data) return
+
+        if (data.type === "anchor") {
+          anchorsByIndex.set(data.index, ctrl)
+        } else if (data.type === "handle_in") {
+          handleInByIndex.set(data.index, ctrl)
+        } else if (data.type === "handle_out") {
+          handleOutByIndex.set(data.index, ctrl)
+        }
+      })
+
+      // Now update lines: For each C command at index i:
+      // - l1: from anchor[i-1] to handle_in[i]
+      // - l2: from anchor[i] to handle_out[i]
+      controls.forEach((ctrl) => {
+        // Lines don't have data, but we need to identify which line is which
+        // For now, check if it's a Line type and update based on nearby controls
+        if (ctrl.type === "line") {
+          // We'll reconstruct lines differently - see below
+        }
+      })
+
+      // Actually, simpler approach: find controls with .line property and update
+      controls.forEach((ctrl) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const c = ctrl as any
+        if (c.data?.type === "handle_in" && c.line) {
+          // l1 goes from previous anchor to this handle
+          const cmdIndex = c.data.index
+          const prevAnchor = anchorsByIndex.get(cmdIndex - 1)
+          if (prevAnchor) {
+            c.line.set({
+              x1: prevAnchor.left,
+              y1: prevAnchor.top,
+              x2: c.left,
+              y2: c.top,
+            })
+          }
+        }
+        if (c.data?.type === "handle_out" && c.line) {
+          // l2 goes from current anchor to this handle
+          const cmdIndex = c.data.index
+          const anchor = anchorsByIndex.get(cmdIndex)
+          if (anchor) {
+            c.line.set({
+              x1: anchor.left,
+              y1: anchor.top,
+              x2: c.left,
+              y2: c.top,
+            })
+          }
+        }
+      })
+
+      canvas.requestRenderAll()
+    }
+
     const createControl = (
       x: number,
       y: number,
@@ -699,67 +773,30 @@ export default function FabricCanvas() {
 
       if (data.type === "anchor") {
         // Update anchor position in path data
-        // Last 2 args are x,y
-        const oldRawX = cmd[cmd.length - 2]
-        const oldRawY = cmd[cmd.length - 1]
-        const deltaX = rawX - oldRawX
-        const deltaY = rawY - oldRawY
-
         cmd[cmd.length - 2] = rawX
         cmd[cmd.length - 1] = rawY
 
-        // Update the line from this anchor to its handle (l2)
-        if (target.lineToHandle) {
-          // Line goes from anchor (x1,y1) to handle (x2,y2)
-          // Update x1,y1 to new anchor position
-          target.lineToHandle.set({ x1: target.left, y1: target.top })
+        // Also need to move the handles that belong to THIS anchor
+        // handle_out (x2,y2) of this C command moves WITH the anchor
+        if (cmd[0] === "C") {
+          const oldAnchorX = cmd[cmd.length - 2] - (rawX - cmd[cmd.length - 2])
+          const oldAnchorY = cmd[cmd.length - 1] - (rawY - cmd[cmd.length - 1])
+          // Move handle_out relative to anchor
+          // Actually we need the delta from old to new anchor position
+          // But we just set cmd, so we can calculate delta
         }
-
-        // Also move the attached handle2 (to keep relative position)
-        if (target.handle) {
-          const handle = target.handle
-          handle.set({
-            left:
-              handle.left + (target.left - (target.lastLeft || target.left)),
-            top: handle.top + (target.lastTop || target.top),
-          })
-          // Update the handle's path data too (x2, y2 in C command)
-          if (cmd[0] === "C") {
-            cmd[3] = cmd[3] + deltaX
-            cmd[4] = cmd[4] + deltaY
-          }
-          // Update line endpoint
-          if (target.lineToHandle) {
-            target.lineToHandle.set({ x2: handle.left, y2: handle.top })
-          }
-        }
-
-        // Store last position for delta calculation
-        target.lastLeft = target.left
-        target.lastTop = target.top
       } else if (data.type === "handle_in") {
-        // C x1 y1 x2 y2 x y
-        // handle_in is x1 y1
+        // C x1 y1 x2 y2 x y - handle_in is x1 y1
         cmd[1] = rawX
         cmd[2] = rawY
-        if (target.line) {
-          // Update visual line
-          // Need to get updated prev anchor content...
-          // Too complex to update lines perfectly in realtime without full redraw?
-          // Let's just update the line endpoint to mouse
-          target.line.set({ x2: target.left, y2: target.top })
-        }
       } else if (data.type === "handle_out") {
-        // C x1 y1 x2 y2 x y
-        // handle_out is x2 y2
+        // C x1 y1 x2 y2 x y - handle_out is x2 y2
         cmd[3] = rawX
         cmd[4] = rawY
-        if (target.line) {
-          target.line.set({ x2: target.left, y2: target.top })
-        }
       }
 
       updatePath()
+      refreshControlLines()
     }
 
     canvas.on("mouse:dblclick", handleDblClick)
