@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { Canvas, FabricObject, Path } from "fabric"
+import { Canvas, Circle, FabricObject, Line, Path, Point, util } from "fabric"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
@@ -463,6 +463,273 @@ export default function FabricCanvas() {
       window.removeEventListener("keydown", handleKeyDown)
     }
   }, [activeTool, setCanvas, history, syncLayers, setActiveTool])
+
+  // --- Path Editing Logic ---
+  const editingPathRef = useRef<Path | null>(null)
+  const controlsRef = useRef<FabricObject[]>([])
+
+  useEffect(() => {
+    const canvas = useEditorStore.getState().canvas
+    if (!canvas) return
+
+    const clearControls = () => {
+      controlsRef.current.forEach((c) => canvas.remove(c))
+      controlsRef.current = []
+      if (editingPathRef.current) {
+        editingPathRef.current.selectable = true
+        editingPathRef.current = null
+      }
+      canvas.requestRenderAll()
+    }
+
+    const updatePath = () => {
+      const pathObj = editingPathRef.current
+      if (!pathObj) return
+
+      // We associate data with controls to know what they modify
+      // Anchor: { type: 'anchor', commandIndex: i, cmd: command }
+      // The controls modified the command objects directly (by ref) or we need to read from controls?
+      // Let's store direct references or rely on the fact that we updated the 'path' array in the object?
+      // Fabric Path object stores commands in .path (array of arrays).
+
+      // Force update
+      pathObj.set({ path: pathObj.path }) // Trigger setter to update dimensions
+      pathObj.setCoords()
+      canvas.requestRenderAll()
+    }
+
+    const createControl = (
+      x: number,
+      y: number,
+      type: string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pathCmd: any,
+      index: number
+    ) => {
+      const circle = new Circle({
+        left: x,
+        top: y,
+        radius: type === "anchor" ? 5 : 3,
+        fill: type === "anchor" ? "#0000ff" : "#ffffff",
+        stroke: "#0000ff",
+        strokeWidth: 1,
+        originX: "center",
+        originY: "center",
+        hasControls: false,
+        hasBorders: false,
+        selectable: true,
+        // Custom props
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { type, pathCmd, index } as any,
+      })
+      return circle
+    }
+
+    const createLine = (
+      p1: { x: number; y: number },
+      p2: { x: number; y: number }
+    ) => {
+      const line = new Line([p1.x, p1.y, p2.x, p2.y], {
+        stroke: "#888888",
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        originX: "center",
+        originY: "center",
+      })
+      return line
+    }
+
+    const enterEditMode = (pathObj: Path) => {
+      if (editingPathRef.current) clearControls()
+
+      editingPathRef.current = pathObj
+      pathObj.selectable = false
+
+      // Ensure we have absolute coordinates for controls?
+      // Fabric Path commands are relative to path's left/top if created with path data?
+      // Actually fabric.Path stores commands, but rendering transforms them.
+      // Editing "in place" requires dealing with the object's Matrix.
+      // For MVP Phase 3: We assume simple paths without rotation/scaling for now,
+      // OR we transform points to canvas space.
+
+      // Simpler approach for MVP:
+      // When entering edit mode, we might need to "reset" the path's transform or
+      // translate controls to its transform.
+      // Let's rely on pathObj.chart (path data) being raw?
+
+      // CAUTION: Fabric.Path behaves complexly with transforms.
+      // The commands are in local coordinate space (relative to object center/corner).
+      // To make this robust:
+      // We will project the local command points to canvas coordinates for the controls.
+      // When controls are moved, we project back to local space to update command.
+
+      const matrix = pathObj.calcTransformMatrix()
+      // Transform path coordinates to canvas coordinates
+      // Path coordinates are relative to pathOffset (center of bounding box)
+      // We need to convert to local space, then apply the object's transform matrix
+      const transformPoint = (x: number, y: number) => {
+        const offset = pathObj.pathOffset || { x: 0, y: 0 }
+        // Local coordinates: subtract pathOffset, then add half width/height to get top-left relative
+        const localX = x - offset.x
+        const localY = y - offset.y
+        return new Point(localX, localY).transform(matrix)
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pathCommands = pathObj.path as any[] // [['M', x, y], ['C', ...], ['Z']]
+
+      pathCommands.forEach((cmd, i) => {
+        if (cmd[0] === "M") {
+          const p = transformPoint(cmd[1], cmd[2])
+          const anchor = createControl(p.x, p.y, "anchor", cmd, i)
+          canvas.add(anchor)
+          controlsRef.current.push(anchor)
+        }
+        if (cmd[0] === "L") {
+          const p = transformPoint(cmd[1], cmd[2])
+          const anchor = createControl(p.x, p.y, "anchor", cmd, i)
+          canvas.add(anchor)
+          controlsRef.current.push(anchor)
+        }
+        if (cmd[0] === "C") {
+          // C x1 y1, x2 y2, x y
+          const p1 = transformPoint(cmd[1], cmd[2]) // Control 1
+          const p2 = transformPoint(cmd[3], cmd[4]) // Control 2
+          const p = transformPoint(cmd[5], cmd[6]) // Anchor
+
+          const anchor = createControl(p.x, p.y, "anchor", cmd, i)
+          const handle1 = createControl(p1.x, p1.y, "handle_in", cmd, i) // Logic mapping might need adjustment
+          const handle2 = createControl(p2.x, p2.y, "handle_out", cmd, i)
+
+          // Lines
+          // handle1 is for 'start' of curve? No, C command:
+          // (current point) -> control1 -> control2 -> target(x,y)
+          // Wait, standard Bezier:
+          // P_prev is start. P_prev connects to x1,y1 (Handle Out of Prev).
+          // P_target connect to x2,y2 (Handle In of Target).
+          // BUT in SVG 'C' command, BOTH handles are specified in the 'C' command itself.
+
+          // Visual connection:
+          // Line from P_prev (Anchor) to x1,y1 (Handle 1)
+          // Line from P_target (Anchor) to x2,y2 (Handle 2)
+
+          // We need previous anchor position to draw line to Handle 1.
+          const prevCmd = pathCommands[i - 1]
+          // M x y or L x y or C ... x y
+          let prevX = 0,
+            prevY = 0
+          if (prevCmd) {
+            const len = prevCmd.length
+            // Last 2 args are always x, y
+            prevX = prevCmd[len - 2]
+            prevY = prevCmd[len - 1]
+          }
+          const prevP = transformPoint(prevX, prevY)
+
+          const l1 = createLine(prevP, p1)
+          const l2 = createLine(p, p2)
+
+          canvas.add(l1, l2, handle1, handle2, anchor)
+          controlsRef.current.push(l1, l2, handle1, handle2, anchor)
+
+          // Associate lines to handles for update
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(handle1 as any).line = l1
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(handle1 as any).base = prevP // Handle 1 is attached to previous anchor
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(handle2 as any).line = l2
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(handle2 as any).base = p // Handle 2 is attached to current anchor
+        }
+      })
+      canvas.requestRenderAll()
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleDblClick = (e: any) => {
+      if (activeTool !== "select") return
+      if (e.target && e.target.type === "path") {
+        enterEditMode(e.target as Path)
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleMouseDown = (e: any) => {
+      // If clicking blank space, exit edit mode
+      if (editingPathRef.current && !e.target) {
+        clearControls()
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleObjectMoving = (e: any) => {
+      if (!editingPathRef.current) return
+      const target = e.target
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = (target as any).data
+      if (!data) return
+
+      // Inverse transform to get local coordinate
+      const pathObj = editingPathRef.current
+      const matrix = pathObj.calcTransformMatrix()
+      const invertedMatrix = util.invertTransform(matrix)
+      const localPoint = new Point(target.left, target.top).transform(
+        invertedMatrix
+      )
+
+      // Convert local coordinates back to path coordinates by adding pathOffset
+      const offset = pathObj.pathOffset || { x: 0, y: 0 }
+      const rawX = localPoint.x + offset.x
+      const rawY = localPoint.y + offset.y
+
+      const cmd = data.pathCmd
+
+      if (data.type === "anchor") {
+        // Update anchor position
+        // Last 2 args are x,y
+        cmd[cmd.length - 2] = rawX
+        cmd[cmd.length - 1] = rawY
+
+        // TODO: If this anchor has attached handles (prev C's handle2, next C's handle1), move them too?
+        // For MVP: Simple point move.
+      } else if (data.type === "handle_in") {
+        // C x1 y1 x2 y2 x y
+        // handle_in is x1 y1
+        cmd[1] = rawX
+        cmd[2] = rawY
+        if (target.line) {
+          // Update visual line
+          // Need to get updated prev anchor content...
+          // Too complex to update lines perfectly in realtime without full redraw?
+          // Let's just update the line endpoint to mouse
+          target.line.set({ x2: target.left, y2: target.top })
+        }
+      } else if (data.type === "handle_out") {
+        // C x1 y1 x2 y2 x y
+        // handle_out is x2 y2
+        cmd[3] = rawX
+        cmd[4] = rawY
+        if (target.line) {
+          target.line.set({ x2: target.left, y2: target.top })
+        }
+      }
+
+      updatePath()
+    }
+
+    canvas.on("mouse:dblclick", handleDblClick)
+    canvas.on("mouse:down", handleMouseDown)
+    canvas.on("object:moving", handleObjectMoving)
+
+    return () => {
+      canvas.off("mouse:dblclick", handleDblClick)
+      canvas.off("mouse:down", handleMouseDown)
+      canvas.off("object:moving", handleObjectMoving)
+      clearControls()
+    }
+  }, [activeTool, setCanvas]) // Re-bind if tool changes? Yes, to enable/disable.
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-950">
