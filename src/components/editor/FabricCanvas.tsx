@@ -479,7 +479,7 @@ export default function FabricCanvas() {
         const oldPath = editingPathRef.current
         // Create a new array reference to force Fabric.js to recalculate dimensions
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const newPathData = oldPath.path.map((cmd: any) => [...cmd])
+        const newPathData = oldPath.path.map((cmd: any) => [...cmd]) as any
 
         // Recreate the Path object entirely to force proper dimension calculation
         const newPath = new Path(newPathData, {
@@ -489,6 +489,19 @@ export default function FabricCanvas() {
           objectCaching: false, // Keep caching disabled
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           id: (oldPath as any).id, // Preserve the ID
+          // Preserve transform properties to maintain position, scale, and rotation
+          left: oldPath.left,
+          top: oldPath.top,
+          scaleX: oldPath.scaleX,
+          scaleY: oldPath.scaleY,
+          angle: oldPath.angle,
+          originX: oldPath.originX,
+          originY: oldPath.originY,
+          flipX: oldPath.flipX,
+          flipY: oldPath.flipY,
+          // Restore interaction properties
+          selectable: true,
+          evented: true,
         })
 
         // Remove old path and add new one
@@ -522,8 +535,6 @@ export default function FabricCanvas() {
       const handleInByIndex: Map<number, any> = new Map()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handleOutByIndex: Map<number, any> = new Map()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const linesByRef: Map<any, { type: string; cmdIndex: number }> = new Map()
 
       controls.forEach((ctrl) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -789,16 +800,6 @@ export default function FabricCanvas() {
         // Update anchor position in path data
         cmd[cmd.length - 2] = rawX
         cmd[cmd.length - 1] = rawY
-
-        // Also need to move the handles that belong to THIS anchor
-        // handle_out (x2,y2) of this C command moves WITH the anchor
-        if (cmd[0] === "C") {
-          const oldAnchorX = cmd[cmd.length - 2] - (rawX - cmd[cmd.length - 2])
-          const oldAnchorY = cmd[cmd.length - 1] - (rawY - cmd[cmd.length - 1])
-          // Move handle_out relative to anchor
-          // Actually we need the delta from old to new anchor position
-          // But we just set cmd, so we can calculate delta
-        }
       } else if (data.type === "handle_in") {
         // C x1 y1 x2 y2 x y - handle_in is x1 y1
         cmd[1] = rawX
