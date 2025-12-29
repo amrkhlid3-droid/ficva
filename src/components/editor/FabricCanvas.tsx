@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { Canvas, FabricObject } from "fabric"
+import { Canvas, FabricObject, Polyline } from "fabric"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
+import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 
 export default function FabricCanvas() {
   const canvasEl = useRef<HTMLCanvasElement>(null)
@@ -145,7 +146,7 @@ export default function FabricCanvas() {
     canvas.on("object:added", updateState)
     canvas.on("object:removed", updateState)
     canvas.on("object:modified", updateState)
-    // @ts-ignore
+    // @ts-expect-error -- Event not in types
     canvas.on("canvas:modified", updateState)
     // Also update on initial load? Maybe not needed if empty.
 
@@ -206,9 +207,157 @@ export default function FabricCanvas() {
       clearTimeout(thumbnailTimeout)
       window.removeEventListener("keydown", handleKeyDown)
       canvas.dispose()
-      setCanvas(null)
     }
   }, [setCanvas, history, syncLayers])
+
+  // --- Pen Tool Logic ---
+  const activeTool = useEditorStore((s) => s.activeTool)
+  const setActiveTool = useEditorStore((s) => s.setActiveTool)
+  // Refs for Pay Tool
+  const activeLineRef = useRef<Polyline | null>(null) // Fabric Polyline
+  const pointsRef = useRef<{ x: number; y: number }[]>([])
+
+  useEffect(() => {
+    const canvas = useEditorStore.getState().canvas
+    if (!canvas) return
+
+    // 1. Mode Switching
+    if (activeTool === "pen") {
+      canvas.defaultCursor = "crosshair"
+      canvas.selection = false // Disable drag selection
+      canvas.forEachObject((o) => (o.selectable = false))
+      canvas.requestRenderAll()
+    } else if (activeTool === "select") {
+      canvas.defaultCursor = "default"
+      canvas.selection = true
+      canvas.forEachObject((o) => (o.selectable = true))
+      canvas.requestRenderAll()
+    }
+
+    // Helper to create polyline
+    const createPolyline = (points: { x: number; y: number }[]) => {
+      return new Polyline(points, {
+        stroke: "#000000",
+        strokeWidth: 2,
+        fill: "",
+        strokeLineCap: "round",
+        strokeLineJoin: "round",
+        objectCaching: false,
+        selectable: false,
+        evented: false,
+        originX: "left",
+        originY: "top",
+      })
+    }
+
+    // 2. Event Handlers for Pen
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleMouseDown = (opt: any) => {
+      if (activeTool !== "pen") return
+
+      const pointer = canvas.getScenePoint(opt.e)
+      const points = pointsRef.current
+
+      // If first point
+      if (points.length === 0) {
+        points.push({ x: pointer.x, y: pointer.y })
+        points.push({ x: pointer.x, y: pointer.y }) // Duplicate for initial
+
+        const poly = createPolyline(points)
+        canvas.add(poly)
+        activeLineRef.current = poly
+        canvas.requestRenderAll()
+      } else {
+        // Fix last point
+        points[points.length - 1] = { x: pointer.x, y: pointer.y }
+        // Add new floating point
+        points.push({ x: pointer.x, y: pointer.y })
+
+        // Recreate object to avoid coordinate shift
+        if (activeLineRef.current) {
+          canvas.remove(activeLineRef.current)
+        }
+        const poly = createPolyline(points)
+        canvas.add(poly)
+        activeLineRef.current = poly
+        canvas.requestRenderAll()
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleMouseMove = (opt: any) => {
+      if (activeTool !== "pen" || pointsRef.current.length === 0) return
+
+      const pointer = canvas.getScenePoint(opt.e)
+      const points = pointsRef.current
+
+      // Update last point
+      points[points.length - 1] = { x: pointer.x, y: pointer.y }
+
+      if (activeLineRef.current) {
+        canvas.remove(activeLineRef.current)
+      }
+      const poly = createPolyline(points)
+      canvas.add(poly)
+      activeLineRef.current = poly
+      canvas.requestRenderAll()
+    }
+
+    const handleDblClick = () => {
+      if (activeTool !== "pen" || !activeLineRef.current) return
+
+      const points = pointsRef.current
+      points.pop() // Remove floating point
+
+      // Remove temp
+      canvas.remove(activeLineRef.current)
+      activeLineRef.current = null
+
+      if (points.length > 1) {
+        // Create final object
+        const poly = new Polyline(points, {
+          stroke: "#000000",
+          strokeWidth: 2,
+          fill: "",
+          strokeLineCap: "round",
+          strokeLineJoin: "round",
+          objectCaching: true,
+          selectable: true,
+          evented: true,
+          originX: "left",
+          originY: "top",
+        })
+
+        const command = new AddObjectCommand(canvas, poly)
+        useEditorStore.getState().history.execute(command)
+      }
+
+      pointsRef.current = []
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (activeTool === "pen" && (e.key === "Enter" || e.key === "Escape")) {
+        e.preventDefault()
+        handleDblClick()
+        if (e.key === "Escape") {
+          setActiveTool("select")
+        }
+      }
+    }
+
+    // Attach listeners
+    canvas.on("mouse:down", handleMouseDown)
+    canvas.on("mouse:move", handleMouseMove)
+    canvas.on("mouse:dblclick", handleDblClick)
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      canvas.off("mouse:down", handleMouseDown)
+      canvas.off("mouse:move", handleMouseMove)
+      canvas.off("mouse:dblclick", handleDblClick)
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [activeTool, setCanvas, history, syncLayers, setActiveTool])
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-950">

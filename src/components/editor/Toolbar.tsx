@@ -42,12 +42,12 @@ export default function Toolbar() {
     history,
     activeSidebar,
     setActiveSidebar,
-    isDrawingMode,
-    toggleDrawingMode,
     brushColor,
     setBrushColor,
     brushWidth,
     setBrushWidth,
+    activeTool,
+    setActiveTool,
   } = useEditorStore()
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -251,13 +251,10 @@ export default function Toolbar() {
         <div className="flex flex-col items-center gap-4 py-4">
           {/* Select Tool */}
           <ToolButton
-            onClick={() => {
-              if (isDrawingMode) toggleDrawingMode(false)
-              // Select tool logic? Usually just disabling others.
-            }}
+            onClick={() => setActiveTool("select")}
             icon={MousePointer2}
             label="Select"
-            active={!isDrawingMode}
+            active={activeTool === "select"}
           />
 
           {/* Drawing Tool */}
@@ -265,12 +262,14 @@ export default function Toolbar() {
             <PopoverTrigger asChild>
               <div>
                 {" "}
-                {/* Wrap in div to avoid button-in-button issues if TooltipTrigger messes up? Shadcn TooltipTrigger asChild works fine usually */}
+                {/* Wrap in div to avoid button-in-button issues */}
                 <ToolButton
                   icon={Pencil}
                   label="Drawing"
-                  active={isDrawingMode}
-                  onClick={() => toggleDrawingMode(!isDrawingMode)}
+                  active={activeTool === "draw"}
+                  onClick={() =>
+                    setActiveTool(activeTool === "draw" ? "select" : "draw")
+                  }
                 />
               </div>
             </PopoverTrigger>
@@ -347,7 +346,7 @@ export default function Toolbar() {
               <DropdownMenuItem onClick={() => addShape("triangle")}>
                 <TriangleIcon className="mr-2 h-4 w-4" /> Triangle
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addShape("line")}>
+              <DropdownMenuItem onClick={() => setActiveTool("pen")}>
                 <Minus className="mr-2 h-4 w-4" /> Line
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => addShape("arrow")}>

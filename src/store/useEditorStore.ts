@@ -37,6 +37,10 @@ interface EditorActions {
   setProjectName: (name: string) => void
   setProjectId: (id: string) => void
 
+  // Tool State
+  activeTool: "select" | "hand" | "draw" | "pen"
+  setActiveTool: (tool: "select" | "hand" | "draw" | "pen") => void
+
   addPage: () => void
   duplicatePage: (id: string) => void
   reorderPages: (oldIndex: number, newIndex: number) => void
@@ -70,9 +74,19 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     projectId: null,
 
     // Drawing Defaults
+    // Drawing Defaults
     isDrawingMode: false,
     brushColor: "#000000",
     brushWidth: 5,
+
+    // Tool Defaults
+    activeTool: "select",
+    setActiveTool: (tool) =>
+      set(() => ({
+        activeTool: tool,
+        // Sync legacy isDrawingMode
+        isDrawingMode: tool === "draw",
+      })),
 
     setProjectName: (name) => set({ projectName: name }),
     setProjectId: (id) => set({ projectId: id }),
@@ -167,13 +181,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       set((state) => {
         const newPages = [...state.pages, newPage]
         if (state.projectId) {
-            import("@/utils/storage").then(({ saveToLocalStorage }) => {
-                saveToLocalStorage(state.projectId!, {
-                    pages: newPages,
-                    activePageId: newPageId,
-                    projectName: state.projectName
-                })
+          import("@/utils/storage").then(({ saveToLocalStorage }) => {
+            saveToLocalStorage(state.projectId!, {
+              pages: newPages,
+              activePageId: newPageId,
+              projectName: state.projectName,
             })
+          })
         }
         return { pages: newPages }
       })
@@ -205,7 +219,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         id: newPageId,
         thumbnail: pageToDuplicate.thumbnail,
         json: clonedJson,
-        background: pageToDuplicate.background
+        background: pageToDuplicate.background,
       }
 
       // Insert after the current page
@@ -215,13 +229,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
 
       set({ pages: newPages })
       if (state.projectId) {
-         import("@/utils/storage").then(({ saveToLocalStorage }) => {
-            saveToLocalStorage(state.projectId!, {
-                pages: newPages,
-                activePageId: newPageId,
-                projectName: state.projectName
-            })
-         })
+        import("@/utils/storage").then(({ saveToLocalStorage }) => {
+          saveToLocalStorage(state.projectId!, {
+            pages: newPages,
+            activePageId: newPageId,
+            projectName: state.projectName,
+          })
+        })
       }
       get().setActivePage(newPageId)
     },
@@ -235,13 +249,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         }
 
         if (state.projectId) {
-            import("@/utils/storage").then(({ saveToLocalStorage }) => {
-                saveToLocalStorage(state.projectId!, {
-                    pages: newPages,
-                    activePageId: state.activePageId,
-                    projectName: state.projectName
-                })
+          import("@/utils/storage").then(({ saveToLocalStorage }) => {
+            saveToLocalStorage(state.projectId!, {
+              pages: newPages,
+              activePageId: state.activePageId,
+              projectName: state.projectName,
             })
+          })
         }
         return { pages: newPages }
       })
@@ -265,13 +279,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
 
       set({ pages: newPages })
       if (state.projectId) {
-            import("@/utils/storage").then(({ saveToLocalStorage }) => {
-                saveToLocalStorage(state.projectId!, {
-                    pages: newPages,
-                    activePageId: newActiveId,
-                    projectName: state.projectName
-                })
-            })
+        import("@/utils/storage").then(({ saveToLocalStorage }) => {
+          saveToLocalStorage(state.projectId!, {
+            pages: newPages,
+            activePageId: newActiveId,
+            projectName: state.projectName,
+          })
+        })
       }
     },
 
