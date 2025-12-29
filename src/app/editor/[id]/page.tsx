@@ -22,6 +22,7 @@ export default function EditorPage() {
   const params = useParams()
   const { canvas, activeSidebar } = useEditorStore()
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
+  const [isCanvasReady, setIsCanvasReady] = useState(false)
 
   // Fetch project data (JSON)
   useEffect(() => {
@@ -43,12 +44,13 @@ export default function EditorPage() {
   }, [params.id])
 
   // Load JSON into Canvas when both are ready
-  // We use a flag 'loaded' to prevent re-loading if not needed,
-  // though simple check is effectively: if canvas is empty? or just once on mount?
-  // Use a ref or simple check to ensure we only load once per project load.
-  // Load data into Store & Canvas
   useEffect(() => {
     if (!projectData || !canvas) return
+
+    // If we've already marked it ready, don't re-run this logic
+    // (unless we want to support external updates, but for now this is initial load)
+    if (useEditorStore.getState().projectId === projectData.id && isCanvasReady)
+      return
 
     // Initialize Store with Project ID
     useEditorStore.getState().setProjectId(projectData.id)
@@ -56,6 +58,10 @@ export default function EditorPage() {
     // Check if data is new multi-page structure or legacy single-page
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json = projectData.json as any
+
+    const finishLoading = () => {
+      setIsCanvasReady(true)
+    }
 
     // Check for "pages" key indicating new structure
     if (
@@ -83,11 +89,13 @@ export default function EditorPage() {
           if (!canvas.getElement()) return // Check if disposed
           canvas.requestRenderAll()
           useEditorStore.getState().syncLayers(canvas)
+          finishLoading()
         })
+      } else {
+        finishLoading()
       }
     } else if (json && Object.keys(json).length > 0) {
       // Fallback: Legacy single page project
-      // Convert to multi-page structure in Store (but don't save to DB until user clicks save)
       console.log("Loading legacy single-page project...")
 
       // Just load directly into canvas as before
@@ -97,20 +105,35 @@ export default function EditorPage() {
         useEditorStore.getState().syncLayers(canvas)
 
         // Also update store to have at least one page with this content
-        // effectively "migrating" it in memory
         const pageId = crypto.randomUUID()
         useEditorStore.setState({
           pages: [{ id: pageId, json: json }],
           activePageId: pageId,
         })
+        finishLoading()
       })
     } else {
       // Empty project
       console.log("Empty project, initializing defaults...")
-      // Store already has default empty page from initialization if needed,
-      // or we can ensure it here.
+      finishLoading()
     }
-  }, [canvas, projectData])
+  }, [canvas, projectData, isCanvasReady]) // We added isCanvasReady check inside to prevent loop
+
+  // Loading Overlay
+  if (!projectData || !isCanvasReady) {
+    return (
+      <div className="bg-background flex h-screen w-full flex-col items-center justify-center space-y-4">
+        <div className="relative h-16 w-16">
+          {/* Logo or Spinner */}
+          <div className="absolute inset-0 animate-ping rounded-full bg-blue-500/20"></div>
+          <div className="absolute inset-2 animate-pulse rounded-full bg-blue-600"></div>
+        </div>
+        <p className="text-muted-foreground animate-pulse font-medium">
+          Loading Editor...
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-background text-foreground flex h-screen flex-col">

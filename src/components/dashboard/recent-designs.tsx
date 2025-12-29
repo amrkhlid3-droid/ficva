@@ -94,11 +94,7 @@ export function RecentDesigns() {
           >
             <div className="bg-muted relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden">
               {project.thumbnailUrl ? (
-                <img
-                  src={project.thumbnailUrl}
-                  alt={project.name}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
+                <ProjectThumbnail project={project} />
               ) : (
                 <FileImage className="h-12 w-12 text-gray-300" />
               )}
@@ -151,5 +147,24 @@ export function RecentDesigns() {
         ))}
       </div>
     </div>
+  )
+}
+
+function ProjectThumbnail({ project }: { project: Project }) {
+  const [loaded, setLoaded] = useState(false)
+
+  return (
+    <>
+      <div
+        className={`absolute inset-0 bg-zinc-200 dark:bg-zinc-800 ${loaded ? "hidden" : "block animate-pulse"}`}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={project.thumbnailUrl!}
+        alt={project.name}
+        className={`h-full w-full object-cover transition-all duration-500 group-hover:scale-105 ${loaded ? "opacity-100" : "opacity-0"}`}
+        onLoad={() => setLoaded(true)}
+      />
+    </>
   )
 }

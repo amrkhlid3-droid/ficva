@@ -114,24 +114,37 @@ export default function FabricCanvas() {
 
     // Thumbnail Generation Debounce
     let thumbnailTimeout: NodeJS.Timeout
-    const updateThumbnail = () => {
+    const updateState = () => {
       clearTimeout(thumbnailTimeout)
       thumbnailTimeout = setTimeout(() => {
+        // 1. Generate Thumbnail
         const dataURL = canvas.toDataURL({
           format: "png",
           quality: 0.5,
           multiplier: 0.2, // Thumbnail scale
         })
-        const { activePageId, updatePageThumbnail } = useEditorStore.getState()
+
+        // 2. Generate JSON
+        const json = canvas.toObject([
+          "id",
+          "selectable",
+          "name",
+          "backgroundColor",
+        ])
+        if (!json.backgroundColor) {
+          json.backgroundColor = canvas.backgroundColor
+        }
+
+        const { activePageId, updatePage } = useEditorStore.getState()
         if (activePageId) {
-          updatePageThumbnail(activePageId, dataURL)
+          updatePage(activePageId, { thumbnail: dataURL, json })
         }
       }, 1000)
     }
 
-    canvas.on("object:added", updateThumbnail)
-    canvas.on("object:removed", updateThumbnail)
-    canvas.on("object:modified", updateThumbnail)
+    canvas.on("object:added", updateState)
+    canvas.on("object:removed", updateState)
+    canvas.on("object:modified", updateState)
     // Also update on initial load? Maybe not needed if empty.
 
     // Initial sync

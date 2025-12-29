@@ -41,7 +41,7 @@ interface EditorActions {
   addPage: () => void
   removePage: (id: string) => void
   setActivePage: (id: string) => void
-  updatePageThumbnail: (id: string, thumbnail: string) => void
+  updatePage: (id: string, updates: Partial<Page>) => void
 
   // Drawing Actions
   toggleDrawingMode: (enabled?: boolean) => void
@@ -245,9 +245,9 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       get().syncLayers(canvas)
     },
 
-    updatePageThumbnail: (id, thumbnail) => {
+    updatePage: (id, updates) => {
       set((state) => ({
-        pages: state.pages.map((p) => (p.id === id ? { ...p, thumbnail } : p)),
+        pages: state.pages.map((p) => (p.id === id ? { ...p, ...updates } : p)),
       }))
     },
 
