@@ -483,6 +483,7 @@ export default function FabricCanvas() {
         pathObj.setCoords()
         pathObj.selectable = true
         pathObj.evented = true // Restore interaction
+        pathObj.objectCaching = true // Re-enable caching for performance
         editingPathRef.current = null
       }
       canvas.requestRenderAll()
@@ -620,6 +621,7 @@ export default function FabricCanvas() {
       editingPathRef.current = pathObj
       pathObj.selectable = false
       pathObj.evented = false // Prevent any interaction with path while editing
+      pathObj.objectCaching = false // Disable caching so path can render beyond original bounds
       canvas.discardActiveObject() // Deselect the path
       canvas.requestRenderAll()
 
