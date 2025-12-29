@@ -482,20 +482,11 @@ export default function FabricCanvas() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const newPath = pathObj.path.map((cmd: any) => [...cmd])
 
-        // First set path with caching disabled
+        // Keep caching disabled to prevent clipping issues
+        // The performance impact is minimal for typical use cases
         pathObj.objectCaching = false
         pathObj.set({ path: newPath })
         pathObj.setCoords()
-
-        // Force immediate render without cache
-        canvas.requestRenderAll()
-
-        // Then re-enable caching after a brief moment
-        setTimeout(() => {
-          pathObj.objectCaching = true
-          pathObj.dirty = true
-          canvas.requestRenderAll()
-        }, 0)
 
         pathObj.selectable = true
         pathObj.evented = true // Restore interaction
