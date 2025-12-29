@@ -476,8 +476,13 @@ export default function FabricCanvas() {
       controlsRef.current.forEach((c) => canvas.remove(c))
       controlsRef.current = []
       if (editingPathRef.current) {
-        editingPathRef.current.selectable = true
-        editingPathRef.current.evented = true // Restore interaction
+        const pathObj = editingPathRef.current
+        // Recalculate bounding box after editing is done
+        // This properly updates width, height, pathOffset, left, top
+        pathObj.set({ path: pathObj.path })
+        pathObj.setCoords()
+        pathObj.selectable = true
+        pathObj.evented = true // Restore interaction
         editingPathRef.current = null
       }
       canvas.requestRenderAll()
@@ -487,15 +492,9 @@ export default function FabricCanvas() {
       const pathObj = editingPathRef.current
       if (!pathObj) return
 
-      // We associate data with controls to know what they modify
-      // Anchor: { type: 'anchor', commandIndex: i, cmd: command }
-      // The controls modified the command objects directly (by ref) or we need to read from controls?
-      // Let's store direct references or rely on the fact that we updated the 'path' array in the object?
-      // Fabric Path object stores commands in .path (array of arrays).
-
-      // Force update
-      pathObj.set({ path: pathObj.path }) // Trigger setter to update dimensions
-      pathObj.setCoords()
+      // Mark as dirty so Fabric re-renders the path with new coordinates
+      // Don't recalculate bounding box during drag - it would change the coordinate system
+      pathObj.dirty = true
       canvas.requestRenderAll()
     }
 
