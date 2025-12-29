@@ -119,24 +119,22 @@ export default function EditorPage() {
     }
   }, [canvas, projectData, isCanvasReady]) // We added isCanvasReady check inside to prevent loop
 
-  // Loading Overlay
-  if (!projectData || !isCanvasReady) {
-    return (
-      <div className="bg-background flex h-screen w-full flex-col items-center justify-center space-y-4">
-        <div className="relative h-16 w-16">
-          {/* Logo or Spinner */}
-          <div className="absolute inset-0 animate-ping rounded-full bg-blue-500/20"></div>
-          <div className="absolute inset-2 animate-pulse rounded-full bg-blue-600"></div>
-        </div>
-        <p className="text-muted-foreground animate-pulse font-medium">
-          Loading Editor...
-        </p>
-      </div>
-    )
-  }
-
   return (
-    <div className="bg-background text-foreground flex h-screen flex-col">
+    <div className="bg-background text-foreground relative flex h-screen flex-col">
+      {/* Loading Overlay */}
+      {(!projectData || !isCanvasReady) && (
+        <div className="bg-background absolute inset-0 z-50 flex h-full w-full flex-col items-center justify-center">
+          <div className="relative h-16 w-16">
+            {/* Logo or Spinner */}
+            <div className="absolute inset-0 animate-ping rounded-full bg-blue-500/20"></div>
+            <div className="absolute inset-2 animate-pulse rounded-full bg-blue-600"></div>
+          </div>
+          <p className="text-muted-foreground mt-4 animate-pulse font-medium">
+            Loading Editor...
+          </p>
+        </div>
+      )}
+
       {/* Header (Top Layer) */}
       <Header />
 
