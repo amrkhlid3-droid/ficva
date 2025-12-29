@@ -213,10 +213,24 @@ export default function FabricCanvas() {
   // --- Pen Tool Logic ---
   const activeTool = useEditorStore((s) => s.activeTool)
   const setActiveTool = useEditorStore((s) => s.setActiveTool)
-  // Refs for Pay Tool
-  const activePathObjectRef = useRef<FabricObject | null>(null) // The visual path on canvas
-  // Store raw points for easier manipulation, convert to commands for Path
-  const pathPointsRef = useRef<{ x: number; y: number }[]>([])
+
+  // Pen Tool Refs
+  const activePathObjectRef = useRef<FabricObject | null>(null)
+
+  // Point structure: { x, y } is the anchor.
+  // cp1 (in-handle) and cp2 (out-handle) are absolute coordinates.
+  const pathPointsRef = useRef<
+    {
+      x: number
+      y: number
+      cp1: { x: number; y: number }
+      cp2: { x: number; y: number }
+    }[]
+  >([])
+
+  // Track dragging for forming curves
+  const isDraggingRef = useRef(false)
+  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null) // Where we clicked down
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
@@ -235,22 +249,31 @@ export default function FabricCanvas() {
       canvas.requestRenderAll()
     }
 
-    // Helper to create path from points
-    // We treat points as: P0 -> M, P1..Pn -> L
-    const createPath = (points: { x: number; y: number }[]) => {
+    // Helper: Create Path from Bezier Points
+    const createPath = (points: typeof pathPointsRef.current) => {
       if (points.length === 0) return null
 
       // Construct SVG path command
-      // e.g. "M 0 0 L 10 10 L 20 20"
+      // P0 is Move.
+      // Pi is Cubic to: C (Pi-1.out) (Pi.in) (Pi.anchor)
       const commands = points.map((p, index) => {
-        return index === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
+        if (index === 0) {
+          return `M ${p.x} ${p.y}`
+        }
+        const prev = points[index - 1]!
+        // Cubic Bezier: C x1 y1, x2 y2, x y
+        // Control point 1: prev.cp2 (outgoing of previous)
+        // Control point 2: curr.cp1 (incoming of current)
+        // Anchor: curr.x curr.y
+        return `C ${prev.cp2.x} ${prev.cp2.y} ${p.cp1.x} ${p.cp1.y} ${p.x} ${p.y}`
       })
+
       const pathData = commands.join(" ")
 
       return new Path(pathData, {
         stroke: "#000000",
         strokeWidth: 2,
-        fill: "rgba(255, 0, 0, 0.2)", // User requested filled shape look. Light red for visibility.
+        fill: "rgba(255, 0, 0, 0.2)",
         strokeLineCap: "round",
         strokeLineJoin: "round",
         objectCaching: false,
@@ -269,33 +292,53 @@ export default function FabricCanvas() {
       const pointer = canvas.getScenePoint(opt.e)
       const points = pathPointsRef.current
 
-      // If first point
+      isDraggingRef.current = true
+      dragStartPointRef.current = { x: pointer.x, y: pointer.y }
+
       if (points.length === 0) {
-        points.push({ x: pointer.x, y: pointer.y }) // Start M
-        points.push({ x: pointer.x, y: pointer.y }) // End L (ghost point for movement)
-
-        const path = createPath(points)
-        if (path) {
-          canvas.add(path)
-          activePathObjectRef.current = path
-          canvas.requestRenderAll()
-        }
+        // Start Point
+        points.push({
+          x: pointer.x,
+          y: pointer.y,
+          cp1: { x: pointer.x, y: pointer.y },
+          cp2: { x: pointer.x, y: pointer.y },
+        })
+        // Ghost Point (for preview)
+        points.push({
+          x: pointer.x,
+          y: pointer.y,
+          cp1: { x: pointer.x, y: pointer.y },
+          cp2: { x: pointer.x, y: pointer.y },
+        })
       } else {
-        // Fix last point (which was floating)
-        points[points.length - 1] = { x: pointer.x, y: pointer.y }
-        // Add new floating point for next segments
-        points.push({ x: pointer.x, y: pointer.y })
+        // We clicked to add a new point.
+        // The last point in array was the "Ghost" following the mouse.
+        // We finalize it at the click position.
+        const lastIndex = points.length - 1
+        points[lastIndex] = {
+          x: pointer.x,
+          y: pointer.y,
+          cp1: { x: pointer.x, y: pointer.y }, // Reset handles to anchor
+          cp2: { x: pointer.x, y: pointer.y },
+        }
 
-        // Recreate object
-        if (activePathObjectRef.current) {
-          canvas.remove(activePathObjectRef.current)
-        }
-        const path = createPath(points)
-        if (path) {
-          canvas.add(path)
-          activePathObjectRef.current = path
-          canvas.requestRenderAll()
-        }
+        // Add NEW Ghost Point
+        points.push({
+          x: pointer.x,
+          y: pointer.y,
+          cp1: { x: pointer.x, y: pointer.y },
+          cp2: { x: pointer.x, y: pointer.y },
+        })
+      }
+
+      // Update canvas
+      if (activePathObjectRef.current)
+        canvas.remove(activePathObjectRef.current)
+      const path = createPath(points)
+      if (path) {
+        canvas.add(path)
+        activePathObjectRef.current = path
+        canvas.requestRenderAll()
       }
     }
 
@@ -306,12 +349,41 @@ export default function FabricCanvas() {
       const pointer = canvas.getScenePoint(opt.e)
       const points = pathPointsRef.current
 
-      // Update last point (ghost)
-      points[points.length - 1] = { x: pointer.x, y: pointer.y }
+      if (isDraggingRef.current && dragStartPointRef.current) {
+        // DRAGGING: Adjust the handles of the JUST ADDED point (second to last, before ghost)
+        // Wait, if we are drawing P0->P1.
+        // MouseDown at P1. Ghost is P2.
+        // We are dragging P1.
+        // So we need to modify points[length - 2].
 
-      if (activePathObjectRef.current) {
-        canvas.remove(activePathObjectRef.current)
+        if (points.length >= 2) {
+          const activeNodeIndex = points.length - 2
+          const anchor = points[activeNodeIndex]
+          if (!anchor) return
+
+          const dx = pointer.x - anchor.x
+          const dy = pointer.y - anchor.y
+
+          // Define handles symmetrically
+          // cp2 (outgoing) follows mouse
+          anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
+          // cp1 (incoming) is opposite
+          anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
+        }
+      } else {
+        // HOVERING: Update the Ghost Point (last one) to follow mouse
+        // Just move anchor, keep handles zero-length (Line behavior by default)
+        const lastIndex = points.length - 1
+        points[lastIndex] = {
+          x: pointer.x,
+          y: pointer.y,
+          cp1: { x: pointer.x, y: pointer.y },
+          cp2: { x: pointer.x, y: pointer.y },
+        }
       }
+
+      if (activePathObjectRef.current)
+        canvas.remove(activePathObjectRef.current)
       const path = createPath(points)
       if (path) {
         canvas.add(path)
@@ -320,50 +392,29 @@ export default function FabricCanvas() {
       }
     }
 
+    const handleMouseUp = () => {
+      // Finish curve drag
+      if (activeTool === "pen") {
+        isDraggingRef.current = false
+        dragStartPointRef.current = null
+      }
+    }
+
     const handleDblClick = () => {
       if (activeTool !== "pen" || !activePathObjectRef.current) return
 
       const points = pathPointsRef.current
-      // Remove ghost point
-      points.pop()
+      points.pop() // Remove ghost point
 
-      // Remove temp
       canvas.remove(activePathObjectRef.current)
       activePathObjectRef.current = null
 
-      if (points.length > 2) {
-        // Create final object with 'Z' to close
-        // Construct SVG path command with Z
+      // Close path with Z
+      if (points.length > 1) {
         const commands = points.map((p, index) => {
-          return index === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
-        })
-        commands.push("Z") // Close path
-        const pathData = commands.join(" ")
-
-        const path = new Path(pathData, {
-          stroke: "#000000",
-          strokeWidth: 2,
-          fill: "rgba(255, 0, 0, 0.5)", // Stronger fill on finish
-          strokeLineCap: "round",
-          strokeLineJoin: "round",
-          objectCaching: true,
-          selectable: true,
-          evented: true,
-          originX: "left",
-          originY: "top",
-        })
-
-        const command = new AddObjectCommand(canvas, path)
-        useEditorStore.getState().history.execute(command)
-      } else if (points.length === 2) {
-        // Just a line, no Z? Or Z to make it a thin shape?
-        // If 2 points, Z makes it disappear if no stroke?
-        // Let's just draw Line if 2 points, OR keep Path without Z.
-        // Standard Pen tool: if 2 points, it's an open path.
-        // Plan said: "双击/回车 (Finish)：自动添加 ["Z"] 命令闭合路径。"
-        // OK, we close it.
-        const commands = points.map((p, index) => {
-          return index === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
+          if (index === 0) return `M ${p.x} ${p.y}`
+          const prev = points[index - 1]!
+          return `C ${prev.cp2.x} ${prev.cp2.y} ${p.cp1.x} ${p.cp1.y} ${p.x} ${p.y}`
         })
         commands.push("Z")
         const pathData = commands.join(" ")
@@ -378,11 +429,13 @@ export default function FabricCanvas() {
           originX: "left",
           originY: "top",
         })
+
         const command = new AddObjectCommand(canvas, path)
         useEditorStore.getState().history.execute(command)
       }
 
       pathPointsRef.current = []
+      isDraggingRef.current = false
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -398,12 +451,14 @@ export default function FabricCanvas() {
     // Attach listeners
     canvas.on("mouse:down", handleMouseDown)
     canvas.on("mouse:move", handleMouseMove)
+    canvas.on("mouse:up", handleMouseUp)
     canvas.on("mouse:dblclick", handleDblClick)
     window.addEventListener("keydown", handleKeyDown)
 
     return () => {
       canvas.off("mouse:down", handleMouseDown)
       canvas.off("mouse:move", handleMouseMove)
+      canvas.off("mouse:up", handleMouseUp)
       canvas.off("mouse:dblclick", handleDblClick)
       window.removeEventListener("keydown", handleKeyDown)
     }
