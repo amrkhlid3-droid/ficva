@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { Canvas, FabricObject, Polyline } from "fabric"
+import { Canvas, FabricObject, Path } from "fabric"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
@@ -214,8 +214,9 @@ export default function FabricCanvas() {
   const activeTool = useEditorStore((s) => s.activeTool)
   const setActiveTool = useEditorStore((s) => s.setActiveTool)
   // Refs for Pay Tool
-  const activeLineRef = useRef<Polyline | null>(null) // Fabric Polyline
-  const pointsRef = useRef<{ x: number; y: number }[]>([])
+  const activePathObjectRef = useRef<FabricObject | null>(null) // The visual path on canvas
+  // Store raw points for easier manipulation, convert to commands for Path
+  const pathPointsRef = useRef<{ x: number; y: number }[]>([])
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
@@ -234,12 +235,22 @@ export default function FabricCanvas() {
       canvas.requestRenderAll()
     }
 
-    // Helper to create polyline
-    const createPolyline = (points: { x: number; y: number }[]) => {
-      return new Polyline(points, {
+    // Helper to create path from points
+    // We treat points as: P0 -> M, P1..Pn -> L
+    const createPath = (points: { x: number; y: number }[]) => {
+      if (points.length === 0) return null
+
+      // Construct SVG path command
+      // e.g. "M 0 0 L 10 10 L 20 20"
+      const commands = points.map((p, index) => {
+        return index === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
+      })
+      const pathData = commands.join(" ")
+
+      return new Path(pathData, {
         stroke: "#000000",
         strokeWidth: 2,
-        fill: "",
+        fill: "rgba(255, 0, 0, 0.2)", // User requested filled shape look. Light red for visibility.
         strokeLineCap: "round",
         strokeLineJoin: "round",
         objectCaching: false,
@@ -256,69 +267,83 @@ export default function FabricCanvas() {
       if (activeTool !== "pen") return
 
       const pointer = canvas.getScenePoint(opt.e)
-      const points = pointsRef.current
+      const points = pathPointsRef.current
 
       // If first point
       if (points.length === 0) {
-        points.push({ x: pointer.x, y: pointer.y })
-        points.push({ x: pointer.x, y: pointer.y }) // Duplicate for initial
+        points.push({ x: pointer.x, y: pointer.y }) // Start M
+        points.push({ x: pointer.x, y: pointer.y }) // End L (ghost point for movement)
 
-        const poly = createPolyline(points)
-        canvas.add(poly)
-        activeLineRef.current = poly
-        canvas.requestRenderAll()
-      } else {
-        // Fix last point
-        points[points.length - 1] = { x: pointer.x, y: pointer.y }
-        // Add new floating point
-        points.push({ x: pointer.x, y: pointer.y })
-
-        // Recreate object to avoid coordinate shift
-        if (activeLineRef.current) {
-          canvas.remove(activeLineRef.current)
+        const path = createPath(points)
+        if (path) {
+          canvas.add(path)
+          activePathObjectRef.current = path
+          canvas.requestRenderAll()
         }
-        const poly = createPolyline(points)
-        canvas.add(poly)
-        activeLineRef.current = poly
-        canvas.requestRenderAll()
+      } else {
+        // Fix last point (which was floating)
+        points[points.length - 1] = { x: pointer.x, y: pointer.y }
+        // Add new floating point for next segments
+        points.push({ x: pointer.x, y: pointer.y })
+
+        // Recreate object
+        if (activePathObjectRef.current) {
+          canvas.remove(activePathObjectRef.current)
+        }
+        const path = createPath(points)
+        if (path) {
+          canvas.add(path)
+          activePathObjectRef.current = path
+          canvas.requestRenderAll()
+        }
       }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleMouseMove = (opt: any) => {
-      if (activeTool !== "pen" || pointsRef.current.length === 0) return
+      if (activeTool !== "pen" || pathPointsRef.current.length === 0) return
 
       const pointer = canvas.getScenePoint(opt.e)
-      const points = pointsRef.current
+      const points = pathPointsRef.current
 
-      // Update last point
+      // Update last point (ghost)
       points[points.length - 1] = { x: pointer.x, y: pointer.y }
 
-      if (activeLineRef.current) {
-        canvas.remove(activeLineRef.current)
+      if (activePathObjectRef.current) {
+        canvas.remove(activePathObjectRef.current)
       }
-      const poly = createPolyline(points)
-      canvas.add(poly)
-      activeLineRef.current = poly
-      canvas.requestRenderAll()
+      const path = createPath(points)
+      if (path) {
+        canvas.add(path)
+        activePathObjectRef.current = path
+        canvas.requestRenderAll()
+      }
     }
 
     const handleDblClick = () => {
-      if (activeTool !== "pen" || !activeLineRef.current) return
+      if (activeTool !== "pen" || !activePathObjectRef.current) return
 
-      const points = pointsRef.current
-      points.pop() // Remove floating point
+      const points = pathPointsRef.current
+      // Remove ghost point
+      points.pop()
 
       // Remove temp
-      canvas.remove(activeLineRef.current)
-      activeLineRef.current = null
+      canvas.remove(activePathObjectRef.current)
+      activePathObjectRef.current = null
 
-      if (points.length > 1) {
-        // Create final object
-        const poly = new Polyline(points, {
+      if (points.length > 2) {
+        // Create final object with 'Z' to close
+        // Construct SVG path command with Z
+        const commands = points.map((p, index) => {
+          return index === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
+        })
+        commands.push("Z") // Close path
+        const pathData = commands.join(" ")
+
+        const path = new Path(pathData, {
           stroke: "#000000",
           strokeWidth: 2,
-          fill: "",
+          fill: "rgba(255, 0, 0, 0.5)", // Stronger fill on finish
           strokeLineCap: "round",
           strokeLineJoin: "round",
           objectCaching: true,
@@ -328,11 +353,36 @@ export default function FabricCanvas() {
           originY: "top",
         })
 
-        const command = new AddObjectCommand(canvas, poly)
+        const command = new AddObjectCommand(canvas, path)
+        useEditorStore.getState().history.execute(command)
+      } else if (points.length === 2) {
+        // Just a line, no Z? Or Z to make it a thin shape?
+        // If 2 points, Z makes it disappear if no stroke?
+        // Let's just draw Line if 2 points, OR keep Path without Z.
+        // Standard Pen tool: if 2 points, it's an open path.
+        // Plan said: "双击/回车 (Finish)：自动添加 ["Z"] 命令闭合路径。"
+        // OK, we close it.
+        const commands = points.map((p, index) => {
+          return index === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`
+        })
+        commands.push("Z")
+        const pathData = commands.join(" ")
+
+        const path = new Path(pathData, {
+          stroke: "#000000",
+          strokeWidth: 2,
+          fill: "rgba(255, 0, 0, 0.5)",
+          objectCaching: true,
+          selectable: true,
+          evented: true,
+          originX: "left",
+          originY: "top",
+        })
+        const command = new AddObjectCommand(canvas, path)
         useEditorStore.getState().history.execute(command)
       }
 
-      pointsRef.current = []
+      pathPointsRef.current = []
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
