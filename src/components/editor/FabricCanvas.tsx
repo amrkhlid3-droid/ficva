@@ -476,20 +476,26 @@ export default function FabricCanvas() {
       controlsRef.current.forEach((c) => canvas.remove(c))
       controlsRef.current = []
       if (editingPathRef.current) {
-        const pathObj = editingPathRef.current
-        // Recalculate bounding box after editing is done
+        const oldPath = editingPathRef.current
         // Create a new array reference to force Fabric.js to recalculate dimensions
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const newPath = pathObj.path.map((cmd: any) => [...cmd])
+        const newPathData = oldPath.path.map((cmd: any) => [...cmd])
 
-        // Keep caching disabled to prevent clipping issues
-        // The performance impact is minimal for typical use cases
-        pathObj.objectCaching = false
-        pathObj.set({ path: newPath })
-        pathObj.setCoords()
+        // Recreate the Path object entirely to force proper dimension calculation
+        const newPath = new Path(newPathData, {
+          fill: oldPath.fill,
+          stroke: oldPath.stroke,
+          strokeWidth: oldPath.strokeWidth,
+          objectCaching: false, // Keep caching disabled
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          id: (oldPath as any).id, // Preserve the ID
+        })
 
-        pathObj.selectable = true
-        pathObj.evented = true // Restore interaction
+        // Remove old path and add new one
+        canvas.remove(oldPath)
+        canvas.add(newPath)
+        canvas.setActiveObject(newPath)
+
         editingPathRef.current = null
       }
       canvas.requestRenderAll()
