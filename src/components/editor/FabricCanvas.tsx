@@ -478,8 +478,10 @@ export default function FabricCanvas() {
       if (editingPathRef.current) {
         const pathObj = editingPathRef.current
         // Recalculate bounding box after editing is done
-        // This properly updates width, height, pathOffset, left, top
-        pathObj.set({ path: pathObj.path })
+        // Create a new array reference to force Fabric.js to recalculate dimensions
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const newPath = pathObj.path.map((cmd: any) => [...cmd])
+        pathObj.set({ path: newPath })
         pathObj.setCoords()
         pathObj.dirty = true // Force cache regeneration with new dimensions
         pathObj.objectCaching = true // Re-enable caching for performance
