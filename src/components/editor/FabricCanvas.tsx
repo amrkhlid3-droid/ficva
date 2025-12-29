@@ -481,9 +481,10 @@ export default function FabricCanvas() {
         // This properly updates width, height, pathOffset, left, top
         pathObj.set({ path: pathObj.path })
         pathObj.setCoords()
+        pathObj.dirty = true // Force cache regeneration with new dimensions
+        pathObj.objectCaching = true // Re-enable caching for performance
         pathObj.selectable = true
         pathObj.evented = true // Restore interaction
-        pathObj.objectCaching = true // Re-enable caching for performance
         editingPathRef.current = null
       }
       canvas.requestRenderAll()
