@@ -477,6 +477,7 @@ export default function FabricCanvas() {
       controlsRef.current = []
       if (editingPathRef.current) {
         editingPathRef.current.selectable = true
+        editingPathRef.current.evented = true // Restore interaction
         editingPathRef.current = null
       }
       canvas.requestRenderAll()
@@ -545,6 +546,9 @@ export default function FabricCanvas() {
 
       editingPathRef.current = pathObj
       pathObj.selectable = false
+      pathObj.evented = false // Prevent any interaction with path while editing
+      canvas.discardActiveObject() // Deselect the path
+      canvas.requestRenderAll()
 
       // Ensure we have absolute coordinates for controls?
       // Fabric Path commands are relative to path's left/top if created with path data?
