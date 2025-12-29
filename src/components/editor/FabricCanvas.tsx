@@ -481,10 +481,22 @@ export default function FabricCanvas() {
         // Create a new array reference to force Fabric.js to recalculate dimensions
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const newPath = pathObj.path.map((cmd: any) => [...cmd])
+
+        // First set path with caching disabled
+        pathObj.objectCaching = false
         pathObj.set({ path: newPath })
         pathObj.setCoords()
-        pathObj.dirty = true // Force cache regeneration with new dimensions
-        pathObj.objectCaching = true // Re-enable caching for performance
+
+        // Force immediate render without cache
+        canvas.requestRenderAll()
+
+        // Then re-enable caching after a brief moment
+        setTimeout(() => {
+          pathObj.objectCaching = true
+          pathObj.dirty = true
+          canvas.requestRenderAll()
+        }, 0)
+
         pathObj.selectable = true
         pathObj.evented = true // Restore interaction
         editingPathRef.current = null
