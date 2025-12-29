@@ -3,7 +3,7 @@ import { create } from "zustand"
 import type { Canvas, FabricObject } from "fabric"
 import { HistoryManager } from "@/lib/editor/history/HistoryManager"
 
-interface Page {
+export interface Page {
   id: string
   thumbnail?: string // Base64 image
   json: object // Fabric.js serialization data
@@ -37,8 +37,9 @@ interface EditorActions {
   setProjectName: (name: string) => void
   setProjectId: (id: string) => void
 
-  // Page Management
   addPage: () => void
+  duplicatePage: (id: string) => void
+  reorderPages: (oldIndex: number, newIndex: number) => void
   removePage: (id: string) => void
   setActivePage: (id: string) => void
   updatePage: (id: string, updates: Partial<Page>) => void
@@ -163,14 +164,87 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         },
       }
 
-      set((state) => ({
-        pages: [...state.pages, newPage],
-        activePageId: newPageId, // Auto-switch to new page? Or stay? Let's switch for now.
-      }))
-
-      // If we switch immediately, we need to trigger the load logic.
-      // Re-using setActivePage might be cleaner, but we can't call an action from an action easily in Zustand v4 without `get().setActivePage`
+      set((state) => {
+        const newPages = [...state.pages, newPage]
+        if (state.projectId) {
+            import("@/utils/storage").then(({ saveToLocalStorage }) => {
+                saveToLocalStorage(state.projectId!, {
+                    pages: newPages,
+                    activePageId: newPageId,
+                    projectName: state.projectName
+                })
+            })
+        }
+        return { pages: newPages }
+      })
       get().setActivePage(newPageId)
+      // Trigger immediate server sync check in useAutoSave via a flag or just let the hook handle it?
+      // Since useAutoSave watches pages, it will pick this up.
+      // AND we want IMMEDIATE sync for structural changes.
+      // We'll handle the "Immediate" part in useAutoSave by checking the TYPE of change?
+      // Actually simpler: let's export a triggerSync function or use a timestamp in store.
+      // For now, let's rely on useAutoSave detecting the page change.
+    },
+
+    duplicatePage: (pageId) => {
+      const state = get()
+      const pageToDuplicate = state.pages.find((p) => p.id === pageId)
+      if (!pageToDuplicate) return
+
+      const newPageId = crypto.randomUUID()
+
+      // Deep clone JSON to prevent reference issues
+      const clonedJson = JSON.parse(JSON.stringify(pageToDuplicate.json))
+
+      // We need to re-generate IDs for all objects in the cloned JSON to avoid collisions
+      // if we were to merge them, but since they are on a separate page, it might be fine.
+      // However, good practice to give them new IDs if they are considered "instances".
+      // For now, simple clone is enough for separate pages.
+
+      const newPage: Page = {
+        id: newPageId,
+        thumbnail: pageToDuplicate.thumbnail,
+        json: clonedJson,
+        background: pageToDuplicate.background
+      }
+
+      // Insert after the current page
+      const index = state.pages.findIndex((p) => p.id === pageId)
+      const newPages = [...state.pages]
+      newPages.splice(index + 1, 0, newPage)
+
+      set({ pages: newPages })
+      if (state.projectId) {
+         import("@/utils/storage").then(({ saveToLocalStorage }) => {
+            saveToLocalStorage(state.projectId!, {
+                pages: newPages,
+                activePageId: newPageId,
+                projectName: state.projectName
+            })
+         })
+      }
+      get().setActivePage(newPageId)
+    },
+
+    reorderPages: (oldIndex, newIndex) => {
+      set((state) => {
+        const newPages = [...state.pages]
+        const [movedPage] = newPages.splice(oldIndex, 1)
+        if (movedPage) {
+          newPages.splice(newIndex, 0, movedPage)
+        }
+
+        if (state.projectId) {
+            import("@/utils/storage").then(({ saveToLocalStorage }) => {
+                saveToLocalStorage(state.projectId!, {
+                    pages: newPages,
+                    activePageId: state.activePageId,
+                    projectName: state.projectName
+                })
+            })
+        }
+        return { pages: newPages }
+      })
     },
 
     removePage: (id) => {
@@ -190,6 +264,15 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       }
 
       set({ pages: newPages })
+      if (state.projectId) {
+            import("@/utils/storage").then(({ saveToLocalStorage }) => {
+                saveToLocalStorage(state.projectId!, {
+                    pages: newPages,
+                    activePageId: newActiveId,
+                    projectName: state.projectName
+                })
+            })
+      }
     },
 
     setActivePage: async (id) => {

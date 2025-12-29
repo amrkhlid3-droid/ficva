@@ -1,22 +1,18 @@
 "use client"
 
 import Link from "next/link"
+import { Download, Undo2, Redo2, Loader2, Cloud } from "lucide-react"
+
 import { useEditorStore } from "@/store/useEditorStore"
-import {
-  Download,
-  Undo2,
-  Redo2,
-  LayoutTemplate,
-  Loader2,
-  Cloud,
-} from "lucide-react"
-import { EditableTitle } from "./EditableTitle"
 import { useAutoSave } from "@/hooks/useAutoSave"
+import { EditableTitle } from "./EditableTitle"
 import { ThemeToggle } from "@/components/ThemeToggle"
+import { Logo } from "@/components/Logo"
 
 export default function Header() {
-  const { canvas, history, canUndo, canRedo, projectName, setProjectName } =
+  const { history, canUndo, canRedo, projectName, setProjectName } =
     useEditorStore()
+  const canvas = useEditorStore((state) => state.canvas)
 
   const handleExport = () => {
     if (!canvas) return
@@ -43,12 +39,9 @@ export default function Header() {
       <div className="flex items-center gap-4">
         <Link
           href="/"
-          className="flex items-center gap-2 text-xl font-bold text-white transition-opacity hover:opacity-80"
+          className="flex items-center gap-2 transition-opacity hover:opacity-80"
         >
-          <div className="rounded-lg bg-blue-600 p-1.5 text-white">
-            <LayoutTemplate className="h-5 w-5" />
-          </div>
-          <span>Ficva</span>
+          <Logo size="sm" showTitle={true} />
         </Link>
         <div className="bg-border h-6 w-px" />
         <EditableTitle

@@ -33,5 +33,7 @@ export class ModifyCanvasCommand implements Command {
     }
 
     this.canvas.requestRenderAll()
+    // @ts-ignore
+    this.canvas.fire("canvas:modified")
   }
 }

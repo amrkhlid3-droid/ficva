@@ -120,8 +120,8 @@ export default function FabricCanvas() {
         // 1. Generate Thumbnail
         const dataURL = canvas.toDataURL({
           format: "png",
-          quality: 0.5,
-          multiplier: 0.2, // Thumbnail scale
+          quality: 0.8,
+          multiplier: 0.5, // Improved thumbnail quality
         })
 
         // 2. Generate JSON
@@ -145,6 +145,8 @@ export default function FabricCanvas() {
     canvas.on("object:added", updateState)
     canvas.on("object:removed", updateState)
     canvas.on("object:modified", updateState)
+    // @ts-ignore
+    canvas.on("canvas:modified", updateState)
     // Also update on initial load? Maybe not needed if empty.
 
     // Initial sync

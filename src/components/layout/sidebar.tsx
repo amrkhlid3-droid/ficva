@@ -4,6 +4,8 @@ import { useState } from "react"
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { Logo } from "@/components/Logo"
+
 import {
   LayoutGrid,
   FolderOpen,
@@ -89,13 +91,10 @@ export function Sidebar({ className }: SidebarProps) {
     >
       <div className="space-y-4 py-4">
         <div className="px-3 py-2">
-          <div className="mb-6 flex items-center gap-2 px-4">
-            <div className="flex size-8 items-center justify-center rounded bg-gradient-to-br from-blue-400 to-purple-600 text-xl font-bold text-white">
-              F
-            </div>
-            <h2 className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-xl font-bold text-transparent dark:from-blue-400 dark:to-purple-400">
-              Ficva
-            </h2>
+          <div className="mb-6 px-4">
+            <Link href="/" className="block">
+              <Logo size="md" showTitle={true} />
+            </Link>
           </div>
           <div className="mb-4 px-3">
             <Button

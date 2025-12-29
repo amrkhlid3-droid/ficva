@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { useEditorStore } from "@/store/useEditorStore"
 import { Trash2 } from "lucide-react"
 import { RemoveObjectCommand } from "@/lib/editor/history/commands/RemoveObjectCommand"
-import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 
 export default function ContextMenu() {
   const { canvas, history } = useEditorStore()

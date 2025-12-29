@@ -16,6 +16,7 @@ interface ProjectData {
   id: string
   name: string
   json: Record<string, unknown>
+  updatedAt?: string
 }
 
 export default function EditorPage() {
@@ -47,21 +48,41 @@ export default function EditorPage() {
   useEffect(() => {
     if (!projectData || !canvas) return
 
-    // If we've already marked it ready, don't re-run this logic
-    // (unless we want to support external updates, but for now this is initial load)
-    if (useEditorStore.getState().projectId === projectData.id && isCanvasReady)
-      return
+    const store = useEditorStore.getState()
 
-    // Initialize Store with Project ID
-    useEditorStore.getState().setProjectId(projectData.id)
+    // Helper to finish loading
+    const finishLoading = () => {
+      setIsCanvasReady(true)
+    }
+
+    // Scenario 1: Project ID matches and we have pages in store.
+    // This implies we are re-mounting (e.g. layout change) or re-hydrating.
+    // We should trust the STORE state (which may have unsaved changes) over projectData.
+    if (store.projectId === projectData.id && store.pages.length > 0) {
+      console.log("Restoring editor state from store (Remount)...")
+      const activePage =
+        store.pages.find((p) => p.id === store.activePageId) || store.pages[0]
+
+      if (activePage && activePage.json) {
+        canvas.loadFromJSON(activePage.json).then(() => {
+          if (!canvas.getElement()) return
+          canvas.requestRenderAll()
+
+          useEditorStore.getState().syncLayers(canvas)
+          finishLoading()
+        })
+      } else {
+        finishLoading()
+      }
+      return
+    }
+
+    // Scenario 2: First load or Project Switch. Trust projectData.
+    store.setProjectId(projectData.id)
 
     // Check if data is new multi-page structure or legacy single-page
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json = projectData.json as any
-
-    const finishLoading = () => {
-      setIsCanvasReady(true)
-    }
 
     // Check for "pages" key indicating new structure
     if (
@@ -70,7 +91,7 @@ export default function EditorPage() {
       Array.isArray(json.pages) &&
       json.pages.length > 0
     ) {
-      console.log("Loading multi-page project...")
+      console.log("Loading multi-page project from server...")
       const { pages, activePageId } = json
 
       // Update Store
@@ -98,26 +119,192 @@ export default function EditorPage() {
       // Fallback: Legacy single page project
       console.log("Loading legacy single-page project...")
 
-      // Just load directly into canvas as before
-      canvas.loadFromJSON(json).then(() => {
-        if (!canvas.getElement()) return // Check if disposed
-        canvas.requestRenderAll()
-        useEditorStore.getState().syncLayers(canvas)
+      if (
+        params.id &&
+        typeof params.id === "string" &&
+        projectData &&
+        params.id === projectData.id
+      ) {
+        // --- Conflict Resolution Logic ---
+        import("@/utils/storage").then(
+          ({ loadFromLocalStorage, saveToLocalStorage }) => {
+            // Assuming 'toast' is available, e.g., from a context or imported
+            // import { toast } from "@/components/ui/use-toast"
+            const localData = loadFromLocalStorage(params.id as string)
+            let finalData = projectData
 
-        // Also update store to have at least one page with this content
-        const pageId = crypto.randomUUID()
-        useEditorStore.setState({
-          pages: [{ id: pageId, json: json }],
-          activePageId: pageId,
+            if (localData) {
+              const serverTime = projectData.updatedAt
+                ? new Date(projectData.updatedAt).getTime()
+                : 0
+              const localTime = localData.timestamp
+
+              console.log(
+                "[Sync] Server Ts:",
+                serverTime,
+                "Local Ts:",
+                localTime
+              )
+
+              if (localData.unsavedChanges && localTime > serverTime) {
+                console.log("[Sync] Conflict: Local is newer. Using Local.")
+                // toast({
+                //     title: "Unsaved changes restored",
+                //     description: "We recovered your unsaved changes from this device.",
+                // })
+                // Use local data
+                // Map local structure to match API response structure roughly where needed
+                // The API returns { data: { json: { pages... } } }
+                // Local Storage has { data: { pages... } }
+                // We need to feed the store with the 'pages' and 'activePageId'
+
+                // Actually, the store initializes from `projectData` which expects { pages: [], activePageId: ... }
+                // The API response `result.data.json` matches this structure.
+                // Local storage `localData.data` also matches this structure.
+
+                finalData = {
+                  ...projectData,
+                  json: localData.data as any,
+                }
+
+                // Trigger an immediate save to sync this back to server?
+                // The store update below will trigger useAutoSave, which will debounce save.
+                // That is verifying.
+              } else {
+                console.log("[Sync] Server is newer or synced. Updating Local.")
+                // Update local storage to match server to avoid future stale usage
+                saveToLocalStorage(
+                  params.id as string,
+                  {
+                    pages: (projectData.json as any).pages,
+                    activePageId: (projectData.json as any).activePageId,
+                    projectName: projectData.name,
+                  },
+                  false
+                )
+              }
+            }
+
+            // Initialize Store
+            if (finalData.json && (finalData.json as any).pages) {
+              // Ensure activePageId is valid
+              let initialActiveId = (finalData.json as any).activePageId
+              if (
+                !initialActiveId &&
+                (finalData.json as any).pages.length > 0
+              ) {
+                initialActiveId = (finalData.json as any).pages[0].id
+              }
+
+              useEditorStore.setState({
+                pages: (finalData.json as any).pages,
+                activePageId: initialActiveId,
+                // Use name from server or local? Local might have new name?
+                // If local won, we should probably use local name too if we stored it?
+                // The local storage stores `projectName` in `data`.
+                // So if local won, finalData.json is localData.data.
+                // But `projectName` is top level property in API, but inside `data` in local.
+                projectName:
+                  localData &&
+                  localData.unsavedChanges &&
+                  localData.timestamp >
+                    (projectData.updatedAt
+                      ? new Date(projectData.updatedAt).getTime()
+                      : 0)
+                    ? (localData.data as any).projectName
+                    : finalData.name,
+                projectId: params.id as string,
+              })
+              // Load active page into canvas
+              const activePage = (finalData.json as any).pages.find(
+                (p: any) => p.id === initialActiveId
+              )
+              if (activePage && activePage.json) {
+                canvas.loadFromJSON(activePage.json).then(() => {
+                  if (!canvas.getElement()) return // Check if disposed
+                  canvas.requestRenderAll()
+                  useEditorStore.getState().syncLayers(canvas)
+                  finishLoading()
+                })
+              } else {
+                finishLoading()
+              }
+            } else if (
+              finalData.json &&
+              Object.keys(finalData.json).length > 0
+            ) {
+              // Fallback: Legacy single page project (after conflict resolution)
+              console.log(
+                "Loading legacy single-page project (after conflict resolution)..."
+              )
+              canvas.loadFromJSON(finalData.json).then(() => {
+                if (!canvas.getElement()) return // Check if disposed
+                canvas.requestRenderAll()
+                useEditorStore.getState().syncLayers(canvas)
+
+                // Also update store to have at least one page with this content
+                const pageId = crypto.randomUUID()
+                useEditorStore.setState({
+                  pages: [{ id: pageId, json: finalData.json }],
+                  activePageId: pageId,
+                  projectName: finalData.name, // Ensure name is set
+                  projectId: params.id as string,
+                })
+                finishLoading()
+              })
+            } else {
+              // Empty project after conflict resolution
+              console.log(
+                "Empty project, initializing defaults (after conflict resolution)..."
+              )
+              const pageId = crypto.randomUUID()
+              useEditorStore.setState({
+                pages: [
+                  {
+                    id: pageId,
+                    json: {
+                      version: "5.3.0",
+                      objects: [],
+                      backgroundColor: "#ffffff",
+                    },
+                  },
+                ],
+                activePageId: pageId,
+                projectName: finalData.name,
+                projectId: params.id as string,
+              })
+              finishLoading()
+            }
+          }
+        )
+      } else {
+        // Original legacy single page project loading if conflict resolution not applicable
+        canvas.loadFromJSON(json).then(() => {
+          if (!canvas.getElement()) return // Check if disposed
+          canvas.requestRenderAll()
+          useEditorStore.getState().syncLayers(canvas)
+
+          // Also update store to have at least one page with this content
+          const pageId = crypto.randomUUID()
+          useEditorStore.setState({
+            pages: [{ id: pageId, json: json }],
+            activePageId: pageId,
+          })
+          finishLoading()
         })
-        finishLoading()
-      })
+      }
     } else {
       // Empty project
       console.log("Empty project, initializing defaults...")
+      // Initialize store with one empty page
+      const pageId = crypto.randomUUID()
+      useEditorStore.setState({
+        pages: [{ id: pageId, json: {} }],
+        activePageId: pageId,
+      })
       finishLoading()
     }
-  }, [canvas, projectData, isCanvasReady]) // We added isCanvasReady check inside to prevent loop
+  }, [canvas, projectData]) // dependency on isCanvasReady removed to allow re-runs on canvas change
 
   return (
     <div className="bg-background text-foreground relative flex h-screen flex-col">

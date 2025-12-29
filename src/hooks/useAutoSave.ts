@@ -7,68 +7,101 @@ export function useAutoSave() {
   const [status, setStatus] = useState<SaveStatus>("saved")
   const { pages, activePageId, projectId, projectName } = useEditorStore()
 
-  // Ref to track if the initial load has happened to avoid saving empty state immediately
+  // Refs
   const isLoadedRef = useRef(false)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // We want to debounce the actual save call
-  // Since `pages` acts as our source of truth (synced by FabricCanvas), we watch it.
-
+  // Effect to handle saving
   useEffect(() => {
-    if (pages.length > 0) {
+    if (pages.length > 0 && !isLoadedRef.current) {
       isLoadedRef.current = true
+      // Set initial previous pages state to avoid immediate triggering on load if we wanted strictly diff-based
+      // But for now, we rely on the fact that store updates trigger this effect.
     }
   }, [pages])
 
   useEffect(() => {
     if (!isLoadedRef.current || !projectId) return
 
-    // Mark as unsaved/saving when changes occur
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // 1. Immediate Local Save for redundancy (Every change)
+    // We already do this for Structural changes in the Store action, but for Canvas changes (updatePage)
+    // it happens here because updatePage is called frequently.
+    // Actually, updatePage in store calls set({pages...}), so this effect runs.
+
+    // We can't easily distinguish "Canvas Ops" vs "Structure Ops" just by the effect dependencies.
+    // However, the rule is: Editor Ops (Canvas) -> Debounce. Structure Ops -> Immediate (handled by Store mostly?)
+    // But Store updates state, and this effect runs.
+    // If we want structure ops to be immediate here, we need to know.
+    // Alternatively, we treat ALL updates here as "Potential Save".
+    // AND we trust that critical store actions (add/remove page) MIGHT have triggered a parallel save?
+    // No, better to centralize.
+
+    // Let's implement the 0.2s Debounce here.
+    // If it's a structural change (page count changed), maybe we want immediate?
+
+    // Strategy:
+    // Always save to LocalStorage immediately here (L1->L2).
+    // Then queue L3 (Server).
+
+    const saveDataToLocal = () => {
+         import("@/utils/storage").then(({ saveToLocalStorage }) => {
+            saveToLocalStorage(projectId, {
+                pages,
+                activePageId,
+                projectName
+            })
+         })
+    }
+    saveDataToLocal()
+
     setStatus("saving")
 
-    const saveProject = async () => {
-      if (!projectId) return
-
+    const saveToServer = async () => {
       try {
         const coverPage = pages[0]
         const projectThumbnail = coverPage?.thumbnail || null
-
-        const projectData = {
-          pages,
-          activePageId,
-        }
-
         const body = {
-          json: projectData,
+          json: { pages, activePageId },
           name: projectName,
           thumbnailUrl: projectThumbnail,
           updatedAt: new Date(),
         }
 
         const res = await fetch(`/api/projects/${projectId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+           method: "PATCH",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify(body),
         })
 
         if (res.ok) {
-          setStatus("saved")
+           setStatus("saved")
+           // TODO: Maybe clear unsaved flag in local storage?
+           import("@/utils/storage").then(({ saveToLocalStorage }) => {
+             saveToLocalStorage(projectId, { pages, activePageId, projectName }, false)
+           })
         } else {
-          setStatus("error")
-          console.error("Auto-save failed")
+           setStatus("error")
         }
-      } catch (error) {
-        console.error("Auto-save error", error)
+      } catch (e) {
+        console.error("Server save failed", e)
         setStatus("error")
       }
     }
 
-    const timer = setTimeout(async () => {
-      await saveProject()
-    }, 2000) // 2 second debounce
+    // Debounce Logic
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
 
-    return () => clearTimeout(timer)
-  }, [pages, projectName, projectId, activePageId])
+    // 200ms debounce
+    debounceTimerRef.current = setTimeout(() => {
+       saveToServer()
+    }, 200)
+
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    }
+  }, [pages, activePageId, projectName, projectId])
 
   return { status }
 }
