@@ -636,15 +636,23 @@ export default function FabricCanvas() {
           canvas.add(l1, l2, handle1, handle2, anchor)
           controlsRef.current.push(l1, l2, handle1, handle2, anchor)
 
-          // Associate lines to handles for update
+          // Associate lines to handles for update when handle moves
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ;(handle1 as any).line = l1
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(handle1 as any).base = prevP // Handle 1 is attached to previous anchor
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ;(handle2 as any).line = l2
+
+          // Associate l2 to this anchor (l2 goes FROM this anchor TO handle2)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(handle2 as any).base = p // Handle 2 is attached to current anchor
+          ;(anchor as any).lineToHandle = l2
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(anchor as any).handle = handle2
+
+          // For l1: it connects FROM previous anchor TO handle1
+          // We need to find the previous anchor and associate l1 with it
+          // For simplicity, store l1 reference on handle1 with "lineFromPrevAnchor" flag
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(handle1 as any).lineFromAnchor = true // l1's x1,y1 endpoint comes from prev anchor
         }
       })
       canvas.requestRenderAll()
@@ -690,13 +698,45 @@ export default function FabricCanvas() {
       const cmd = data.pathCmd
 
       if (data.type === "anchor") {
-        // Update anchor position
+        // Update anchor position in path data
         // Last 2 args are x,y
+        const oldRawX = cmd[cmd.length - 2]
+        const oldRawY = cmd[cmd.length - 1]
+        const deltaX = rawX - oldRawX
+        const deltaY = rawY - oldRawY
+
         cmd[cmd.length - 2] = rawX
         cmd[cmd.length - 1] = rawY
 
-        // TODO: If this anchor has attached handles (prev C's handle2, next C's handle1), move them too?
-        // For MVP: Simple point move.
+        // Update the line from this anchor to its handle (l2)
+        if (target.lineToHandle) {
+          // Line goes from anchor (x1,y1) to handle (x2,y2)
+          // Update x1,y1 to new anchor position
+          target.lineToHandle.set({ x1: target.left, y1: target.top })
+        }
+
+        // Also move the attached handle2 (to keep relative position)
+        if (target.handle) {
+          const handle = target.handle
+          handle.set({
+            left:
+              handle.left + (target.left - (target.lastLeft || target.left)),
+            top: handle.top + (target.lastTop || target.top),
+          })
+          // Update the handle's path data too (x2, y2 in C command)
+          if (cmd[0] === "C") {
+            cmd[3] = cmd[3] + deltaX
+            cmd[4] = cmd[4] + deltaY
+          }
+          // Update line endpoint
+          if (target.lineToHandle) {
+            target.lineToHandle.set({ x2: handle.left, y2: handle.top })
+          }
+        }
+
+        // Store last position for delta calculation
+        target.lastLeft = target.left
+        target.lastTop = target.top
       } else if (data.type === "handle_in") {
         // C x1 y1 x2 y2 x y
         // handle_in is x1 y1
