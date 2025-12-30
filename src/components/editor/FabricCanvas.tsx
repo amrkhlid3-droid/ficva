@@ -748,6 +748,8 @@ export default function FabricCanvas() {
         pathOffset: pathObj.pathOffset,
 
         excludeFromExport: true, // Don't save
+
+        isGhost: true, // Mark as ghost to prevent double-click editing
       })
       canvas.add(ghostPath)
 
@@ -906,6 +908,10 @@ export default function FabricCanvas() {
         // Since we recreate paths, checking reference equality might be tricky if user clicks fast.
         // But usually editingPathRef.current is the active one.
         if (editingPathRef.current === e.target) return
+
+        // Ignore Ghost Paths
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((e.target as any).isGhost) return
 
         enterEditMode(e.target as Path)
       }
