@@ -500,6 +500,20 @@ export default function FabricCanvas() {
 
       controlsRef.current.forEach((c) => canvas.remove(c))
       controlsRef.current = []
+      controlsRef.current.forEach((c) => canvas.remove(c))
+      controlsRef.current = []
+
+      // Restore selection globally
+      canvas.selection = true
+      canvas.forEachObject((o) => {
+        // Don't enable ghost or controls (they are gone anyway), but good practice
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (!(o as any).isGhost && !(o as any).excludeFromExport) {
+          o.selectable = true
+          o.evented = true
+        }
+      })
+
       if (editingPathRef.current) {
         const oldPath = editingPathRef.current
         // Remove ghost path if exists
@@ -725,6 +739,13 @@ export default function FabricCanvas() {
       pathObj.evented = false
       pathObj.objectCaching = false
 
+      // Disable selection of EVERYTHING else
+      canvas.selection = false // Disable drag selection
+      canvas.forEachObject((o) => {
+        o.selectable = false
+        o.evented = false // Prevent clicking through to other objects
+      })
+
       // 2. Create Ghost Path for interaction (Stroke Only)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ghostPath = new Path(pathObj.path as any, {
@@ -732,10 +753,12 @@ export default function FabricCanvas() {
         fill: "", // Transparent fill prevents mouse detection on fill area
         // CRITICAL: Must not be fully transparent for hit detection to work!
         stroke: "rgba(0,0,0,0.01)",
-        strokeWidth: Math.max(pathObj.strokeWidth || 1, 5), // Minimum clickable width for better UX
+        strokeWidth: pathObj.strokeWidth || 1, // Match original width exactly
+        strokeUniform: pathObj.strokeUniform, // Copy uniform scaling
         selectable: false,
         evented: true, // This object captures events
         perPixelTargetFind: true, // CRITICAL: Only stroke pixels trigger events
+        hoverCursor: "default", // CRITICAL: Don't show selection cursor
 
         // Match transform to align perfectly
         left: pathObj.left,
@@ -751,6 +774,12 @@ export default function FabricCanvas() {
 
         isGhost: true, // Mark as ghost to prevent double-click editing
       })
+      console.log(
+        "Ghost Path created. Original:",
+        pathObj.strokeWidth,
+        "Ghost:",
+        ghostPath.strokeWidth
+      )
       canvas.add(ghostPath)
 
       // Attach to pathObj for updates and cleanup
@@ -765,7 +794,7 @@ export default function FabricCanvas() {
       ghostPath.on("mouseover", () => {
         ghostPath.set({
           stroke: highlightColor,
-          strokeWidth: Math.max(pathObj.strokeWidth || 1, 5), // Ensure highlight maintains clickable width
+          strokeWidth: pathObj.strokeWidth || 1, // Match original width
         })
         canvas.requestRenderAll()
       })
@@ -784,7 +813,7 @@ export default function FabricCanvas() {
       // 4. Sync prop changes (e.g. from panel) to Ghost Path
       const syncProps = () => {
         // Only need to sync dimensions/strokeWidth. Path data handled by updatePath.
-        ghostPath.set({ strokeWidth: pathObj.strokeWidth })
+        ghostPath.set({ strokeWidth: pathObj.strokeWidth || 1 })
         canvas.requestRenderAll()
       }
       pathObj.on("modified", syncProps)
