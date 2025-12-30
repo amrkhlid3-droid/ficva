@@ -1,5 +1,6 @@
 import { Command } from "../types"
 import { Canvas } from "fabric"
+import { useEditorStore } from "@/store/useEditorStore"
 
 export class ModifyCanvasCommand implements Command {
   constructor(
@@ -33,7 +34,39 @@ export class ModifyCanvasCommand implements Command {
     }
 
     this.canvas.requestRenderAll()
-    // @ts-ignore
+    // @ts-expect-error -- Event not in types
     this.canvas.fire("canvas:modified")
+
+    // CRITICAL: Save canvas state to current page
+    this.saveCanvasToPage()
+  }
+
+  private saveCanvasToPage() {
+    const state = useEditorStore.getState()
+    const { pages, activePageId } = state
+
+    const currentIndex = pages.findIndex((p) => p.id === activePageId)
+    if (currentIndex === -1) return
+
+    // Serialize canvas with custom props
+    const json = this.canvas.toObject(["id", "selectable", "name"])
+
+    // CRITICAL: Fabric.js toObject() doesn't include width/height by default!
+    // Manually add them to the JSON
+    json.width = this.canvas.width
+    json.height = this.canvas.height
+
+    // Update page in store
+    const updatedPages = [...pages]
+    const pageToUpdate = updatedPages[currentIndex]
+
+    if (pageToUpdate) {
+      updatedPages[currentIndex] = {
+        ...pageToUpdate,
+        json: json,
+        id: pageToUpdate.id,
+      }
+      useEditorStore.setState({ pages: updatedPages })
+    }
   }
 }

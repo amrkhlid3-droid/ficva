@@ -27,13 +27,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { Slider } from "@/components/ui/slider"
-import { Label } from "@/components/ui/label"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 
 export default function Toolbar() {
@@ -42,10 +35,6 @@ export default function Toolbar() {
     history,
     activeSidebar,
     setActiveSidebar,
-    brushColor,
-    setBrushColor,
-    brushWidth,
-    setBrushWidth,
     activeTool,
     setActiveTool,
   } = useEditorStore()
@@ -257,75 +246,15 @@ export default function Toolbar() {
             active={activeTool === "select"}
           />
 
-          {/* Drawing Tool */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <div>
-                {" "}
-                {/* Wrap in div to avoid button-in-button issues */}
-                <ToolButton
-                  icon={Pencil}
-                  label="Drawing"
-                  active={activeTool === "draw"}
-                  onClick={() =>
-                    setActiveTool(activeTool === "draw" ? "select" : "draw")
-                  }
-                />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent side="right" className="w-64" align="start">
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <h4 className="leading-none font-medium">Drawing Settings</h4>
-                  <p className="text-muted-foreground text-sm">
-                    Configure your brush.
-                  </p>
-                </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="width">Width</Label>
-                    <span className="text-muted-foreground hover:border-border w-12 rounded-md border border-transparent px-2 py-0.5 text-right text-sm">
-                      {brushWidth}px
-                    </span>
-                  </div>
-                  <Slider
-                    id="width"
-                    max={50}
-                    min={1}
-                    step={1}
-                    value={[brushWidth]}
-                    onValueChange={(value) => setBrushWidth(value[0] ?? 5)}
-                    className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="color">Color</Label>
-                  <div className="flex gap-2">
-                    {[
-                      "#000000",
-                      "#ff0000",
-                      "#00ff00",
-                      "#0000ff",
-                      "#ffffff",
-                    ].map((c) => (
-                      <button
-                        key={c}
-                        className={`h-6 w-6 rounded-full border border-gray-200 ${brushColor === c ? "ring-primary ring-2 ring-offset-2" : ""}`}
-                        style={{ backgroundColor: c }}
-                        onClick={() => setBrushColor(c)}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      value={brushColor}
-                      onChange={(e) => setBrushColor(e.target.value)}
-                      className="h-6 w-6 cursor-pointer overflow-hidden rounded-full border-none bg-transparent p-0"
-                    />
-                  </div>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+          {/* Pen Tool */}
+          <ToolButton
+            onClick={() =>
+              setActiveTool(activeTool === "pen" ? "select" : "pen")
+            }
+            icon={Pencil}
+            label="Pen Tool"
+            active={activeTool === "pen"}
+          />
 
           <div className="bg-border h-px w-8" />
 
@@ -346,7 +275,7 @@ export default function Toolbar() {
               <DropdownMenuItem onClick={() => addShape("triangle")}>
                 <TriangleIcon className="mr-2 h-4 w-4" /> Triangle
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setActiveTool("pen")}>
+              <DropdownMenuItem onClick={() => addShape("line")}>
                 <Minus className="mr-2 h-4 w-4" /> Line
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => addShape("arrow")}>

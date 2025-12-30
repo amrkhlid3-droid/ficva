@@ -10,6 +10,14 @@ export interface Page {
   background?: string
 }
 
+export interface PenToolConfig {
+  stroke: string
+  strokeWidth: number
+  strokeDashArray: number[] | null
+  strokeLineCap: "butt" | "round" | "square"
+  strokeLineJoin: "miter" | "round" | "bevel"
+}
+
 interface EditorState {
   canvas: Canvas | null
   // Drawing State
@@ -26,6 +34,9 @@ interface EditorState {
   activeSidebar: "none" | "assets"
   projectName: string
   projectId: string | null
+  penToolConfig: PenToolConfig
+
+  editingPath: FabricObject | null
 }
 
 interface EditorActions {
@@ -37,9 +48,12 @@ interface EditorActions {
   setProjectName: (name: string) => void
   setProjectId: (id: string) => void
 
+  setEditingPath: (path: FabricObject | null) => void
+
   // Tool State
   activeTool: "select" | "hand" | "draw" | "pen"
   setActiveTool: (tool: "select" | "hand" | "draw" | "pen") => void
+  setPenToolConfig: (config: Partial<PenToolConfig>) => void
 
   addPage: () => void
   duplicatePage: (id: string) => void
@@ -74,10 +88,18 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     projectId: null,
 
     // Drawing Defaults
-    // Drawing Defaults
     isDrawingMode: false,
     brushColor: "#000000",
     brushWidth: 5,
+
+    // Pen Tool Defaults
+    penToolConfig: {
+      stroke: "#000000",
+      strokeWidth: 2,
+      strokeDashArray: null,
+      strokeLineCap: "round",
+      strokeLineJoin: "round",
+    },
 
     // Tool Defaults
     activeTool: "select",
@@ -88,8 +110,19 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         isDrawingMode: tool === "draw",
       })),
 
+    setPenToolConfig: (config) =>
+      set((state) => ({
+        penToolConfig: { ...state.penToolConfig, ...config },
+      })),
+
     setProjectName: (name) => set({ projectName: name }),
     setProjectId: (id) => set({ projectId: id }),
+
+    // Path Editing State
+
+    editingPath: null,
+
+    setEditingPath: (path) => set({ editingPath: path }),
 
     setCanvas: (canvas) => {
       set({ canvas })
@@ -295,6 +328,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
 
       if (!canvas || id === activePageId) return
 
+      // CRITICAL: Exit edit mode before saving to prevent control points from being saved
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (typeof (canvas as any).exitEditMode === "function") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(canvas as any).exitEditMode()
+      }
+
       // 1. Save current page state
       const currentIndex = pages.findIndex((p) => p.id === activePageId)
 
@@ -303,6 +343,10 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         // We need to be careful with JSON export.
         // fabric.Canvas#toJSON or toObject
         const json = canvas.toObject(["id", "selectable", "name"]) // Include custom props
+
+        // CRITICAL: Fabric.js toObject() doesn't include width/height by default!
+        json.width = canvas.width
+        json.height = canvas.height
 
         // Update the page in store
         const updatedPages = [...pages]

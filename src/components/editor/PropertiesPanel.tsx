@@ -10,7 +10,29 @@ import { NumberInput } from "./properties/NumberInput"
 import { Color } from "fabric"
 
 export default function PropertiesPanel() {
-  const { selectedObjects, canvas, history } = useEditorStore()
+  const {
+    selectedObjects,
+    canvas,
+    history,
+    activeTool,
+    penToolConfig,
+    setPenToolConfig,
+
+    editingPath,
+  } = useEditorStore()
+
+  // Determine the active target object for the properties panel
+  // If selecting a control point in edit mode, fall back to the editing path
+  const selection = selectedObjects?.[0]
+
+  const isControlPoint =
+    selection &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (selection as any).data &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ["anchor", "handle_in", "handle_out"].includes((selection as any).data.type)
+
+  const activeObject = isControlPoint ? editingPath : selection || editingPath
 
   // Track initial value for slider operations to avoid spamming history
   // MUST BE HERE before any conditional returns
@@ -21,18 +43,138 @@ export default function PropertiesPanel() {
   const [opacity, setOpacity] = useState(1)
 
   // Sync local state when active object changes (e.g. Selection change or Undo/Redo)
-  const activeObjectRef = selectedObjects?.[0]
   useEffect(() => {
-    if (activeObjectRef) {
+    if (activeObject) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOpacity(activeObjectRef.opacity ?? 1)
+      setOpacity(activeObject.opacity ?? 1)
     }
-  }, [activeObjectRef, activeObjectRef?.opacity])
+  }, [activeObject, activeObject?.opacity])
 
-  if (!selectedObjects || selectedObjects.length === 0) {
+  if (!activeObject) {
     if (!canvas) return null
 
     // Canvas Properties View
+    if (activeTool === "pen") {
+      return (
+        <div className="bg-background text-foreground flex h-full w-full flex-col">
+          <div className="space-y-6 p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                Pen Tool Settings
+              </div>
+            </div>
+
+            {/* Stroke Color */}
+            <div className="space-y-2">
+              <label className="text-muted-foreground block text-xs font-medium uppercase">
+                Stroke Color
+              </label>
+              <input
+                type="color"
+                value={penToolConfig.stroke}
+                onChange={(e) => setPenToolConfig({ stroke: e.target.value })}
+                className="border-border h-10 w-full cursor-pointer rounded border"
+              />
+            </div>
+
+            {/* Stroke Width */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-muted-foreground text-xs font-medium uppercase">
+                  Stroke Width
+                </label>
+                <span className="text-muted-foreground text-xs">
+                  {penToolConfig.strokeWidth}px
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.5}
+                max={20}
+                step={0.5}
+                value={penToolConfig.strokeWidth}
+                onChange={(e) =>
+                  setPenToolConfig({ strokeWidth: +e.target.value })
+                }
+                className="w-full"
+              />
+            </div>
+
+            {/* Line Style */}
+            <div className="space-y-2">
+              <label className="text-muted-foreground block text-xs font-medium uppercase">
+                Line Style
+              </label>
+              <select
+                value={penToolConfig.strokeDashArray ? "dashed" : "solid"}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value === "solid") {
+                    setPenToolConfig({ strokeDashArray: null })
+                  } else if (value === "dashed") {
+                    setPenToolConfig({ strokeDashArray: [10, 5] })
+                  } else if (value === "dotted") {
+                    setPenToolConfig({ strokeDashArray: [2, 3] })
+                  }
+                }}
+                className="bg-input border-border text-foreground w-full rounded border px-3 py-2 text-sm"
+              >
+                <option value="solid">Solid</option>
+                <option value="dashed">Dashed</option>
+                <option value="dotted">Dotted</option>
+              </select>
+            </div>
+
+            {/* Line Cap */}
+            <div className="space-y-2">
+              <label className="text-muted-foreground block text-xs font-medium uppercase">
+                Line Cap
+              </label>
+              <select
+                value={penToolConfig.strokeLineCap}
+                onChange={(e) =>
+                  setPenToolConfig({
+                    strokeLineCap: e.target.value as
+                      | "butt"
+                      | "round"
+                      | "square",
+                  })
+                }
+                className="bg-input border-border text-foreground w-full rounded border px-3 py-2 text-sm"
+              >
+                <option value="butt">Butt</option>
+                <option value="round">Round</option>
+                <option value="square">Square</option>
+              </select>
+            </div>
+
+            {/* Line Join */}
+            <div className="space-y-2">
+              <label className="text-muted-foreground block text-xs font-medium uppercase">
+                Line Join
+              </label>
+              <select
+                value={penToolConfig.strokeLineJoin}
+                onChange={(e) =>
+                  setPenToolConfig({
+                    strokeLineJoin: e.target.value as
+                      | "miter"
+                      | "round"
+                      | "bevel",
+                  })
+                }
+                className="bg-input border-border text-foreground w-full rounded border px-3 py-2 text-sm"
+              >
+                <option value="miter">Miter</option>
+                <option value="round">Round</option>
+                <option value="bevel">Bevel</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="bg-background text-foreground flex h-full w-full flex-col">
         <div className="space-y-6 p-4">
@@ -227,9 +369,6 @@ export default function PropertiesPanel() {
       </div>
     )
   }
-
-  // Handle single object selection for MVP
-  const activeObject = selectedObjects[0]
 
   if (!activeObject) {
     return null
@@ -617,14 +756,9 @@ export default function PropertiesPanel() {
               value={(activeObject.stroke as string) || "#000000"}
               onChange={(e) => updateProperty("stroke", e.target.value)}
             />
-            <input
-              type="number"
-              min="0"
-              max="20"
+            <NumberInput
               value={activeObject.strokeWidth || 0}
-              onChange={(e) =>
-                updateProperty("strokeWidth", parseInt(e.target.value))
-              }
+              onChange={(val) => updateProperty("strokeWidth", val)}
               className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-20 rounded border px-2 py-1 text-sm focus:ring-1 focus:outline-none"
               placeholder="Width"
             />

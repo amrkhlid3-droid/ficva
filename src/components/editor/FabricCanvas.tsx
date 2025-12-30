@@ -38,15 +38,22 @@ export default function FabricCanvas() {
     if (!canvasEl.current) return
 
     // Initialize Fabric Canvas v7
-    // Using a fixed size for MVP 800x600
+    // Default size - will be overridden by loadFromJSON if dimensions are saved
     const canvas = new Canvas(canvasEl.current, {
-      width: 800,
-      height: 600,
+      width: 1200,
+      height: 800,
       backgroundColor: "#ffffff",
       fireRightClick: true, // Enable right click events
       stopContextMenu: true, // Prevent default browser context menu
       preserveObjectStacking: true, // Allow selected objects to be behind others visually
     })
+
+    console.log(
+      "[FabricCanvas] Canvas initialized with:",
+      canvas.width,
+      "x",
+      canvas.height
+    )
 
     setCanvas(canvas)
 
@@ -236,22 +243,34 @@ export default function FabricCanvas() {
     const canvas = useEditorStore.getState().canvas
     if (!canvas) return
 
-    // 1. Mode Switching
+    // Set cursor based on active tool
     if (activeTool === "pen") {
-      canvas.defaultCursor = "crosshair"
-      canvas.selection = false // Disable drag selection
-      canvas.forEachObject((o) => (o.selectable = false))
-      canvas.requestRenderAll()
-    } else if (activeTool === "select") {
+      canvas.defaultCursor = "crosshair" // Pen-like cursor
+      canvas.hoverCursor = "crosshair"
+    } else {
       canvas.defaultCursor = "default"
-      canvas.selection = true
-      canvas.forEachObject((o) => (o.selectable = true))
-      canvas.requestRenderAll()
+      canvas.hoverCursor = "move"
     }
+    canvas.requestRenderAll()
+  }, [activeTool])
+
+  // Pen Tool Logic
+  useEffect(() => {
+    const canvas = useEditorStore.getState().canvas
+    if (!canvas || activeTool !== "pen") return
+
+    // 1. Mode Switching - Disable selection when using Pen Tool
+    canvas.defaultCursor = "crosshair"
+    canvas.selection = false // Disable drag selection
+    canvas.forEachObject((o) => (o.selectable = false))
+    canvas.requestRenderAll()
 
     // Helper: Create Path from Bezier Points
     const createPath = (points: typeof pathPointsRef.current) => {
       if (points.length === 0) return null
+
+      // Get stroke config from store
+      const { penToolConfig } = useEditorStore.getState()
 
       // Construct SVG path command
       // P0 is Move.
@@ -271,17 +290,20 @@ export default function FabricCanvas() {
       const pathData = commands.join(" ")
 
       return new Path(pathData, {
-        stroke: "#000000",
-        strokeWidth: 2,
+        stroke: penToolConfig.stroke,
+        strokeWidth: penToolConfig.strokeWidth,
+        strokeDashArray: penToolConfig.strokeDashArray || undefined,
+        strokeLineCap: penToolConfig.strokeLineCap,
+        strokeLineJoin: penToolConfig.strokeLineJoin,
         fill: "rgba(255, 0, 0, 0.2)",
-        strokeLineCap: "round",
-        strokeLineJoin: "round",
         objectCaching: false,
         selectable: false,
         evented: false,
         originX: "left",
         originY: "top",
-      })
+        id: crypto.randomUUID(), // Add ID to prevent syncLayers warnings
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any
     }
 
     // 2. Event Handlers for Pen
@@ -311,18 +333,15 @@ export default function FabricCanvas() {
           cp2: { x: pointer.x, y: pointer.y },
         })
       } else {
-        // We clicked to add a new point.
-        // The last point in array was the "Ghost" following the mouse.
-        // We finalize it at the click position.
+        // Real Point (replace ghost)
         const lastIndex = points.length - 1
         points[lastIndex] = {
           x: pointer.x,
           y: pointer.y,
-          cp1: { x: pointer.x, y: pointer.y }, // Reset handles to anchor
+          cp1: { x: pointer.x, y: pointer.y }, // Will adjust below if dragging
           cp2: { x: pointer.x, y: pointer.y },
         }
-
-        // Add NEW Ghost Point
+        // New Ghost
         points.push({
           x: pointer.x,
           y: pointer.y,
@@ -331,7 +350,7 @@ export default function FabricCanvas() {
         })
       }
 
-      // Update canvas
+      // Redraw
       if (activePathObjectRef.current)
         canvas.remove(activePathObjectRef.current)
       const path = createPath(points)
@@ -344,32 +363,21 @@ export default function FabricCanvas() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleMouseMove = (opt: any) => {
-      if (activeTool !== "pen" || pathPointsRef.current.length === 0) return
-
+      if (activeTool !== "pen") return
       const pointer = canvas.getScenePoint(opt.e)
       const points = pathPointsRef.current
+      if (points.length === 0) return
 
       if (isDraggingRef.current && dragStartPointRef.current) {
-        // DRAGGING: Adjust the handles of the JUST ADDED point (second to last, before ghost)
-        // Wait, if we are drawing P0->P1.
-        // MouseDown at P1. Ghost is P2.
-        // We are dragging P1.
-        // So we need to modify points[length - 2].
-
-        if (points.length >= 2) {
-          const activeNodeIndex = points.length - 2
-          const anchor = points[activeNodeIndex]
-          if (!anchor) return
-
-          const dx = pointer.x - anchor.x
-          const dy = pointer.y - anchor.y
-
-          // Define handles symmetrically
-          // cp2 (outgoing) follows mouse
-          anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
-          // cp1 (incoming) is opposite
-          anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
-        }
+        // DRAGGING OUT HANDLES from the second-to-last anchor (the one we just placed)
+        const anchor = points[points.length - 2]!
+        const start = dragStartPointRef.current
+        const dx = pointer.x - start.x
+        const dy = pointer.y - start.y
+        // cp2 (outgoing) is in the direction of the drag
+        anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
+        // cp1 (incoming) is opposite
+        anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
       } else {
         // HOVERING: Update the Ghost Point (last one) to follow mouse
         // Just move anchor, keep handles zero-length (Line behavior by default)
@@ -393,24 +401,25 @@ export default function FabricCanvas() {
     }
 
     const handleMouseUp = () => {
-      // Finish curve drag
-      if (activeTool === "pen") {
-        isDraggingRef.current = false
-        dragStartPointRef.current = null
-      }
+      isDraggingRef.current = false
     }
 
     const handleDblClick = () => {
-      if (activeTool !== "pen" || !activePathObjectRef.current) return
+      if (activeTool !== "pen") return
+
+      // Remove preview
+      if (activePathObjectRef.current) {
+        canvas.remove(activePathObjectRef.current)
+        activePathObjectRef.current = null
+      }
 
       const points = pathPointsRef.current
       points.pop() // Remove ghost point
 
-      canvas.remove(activePathObjectRef.current)
-      activePathObjectRef.current = null
-
       // Close path with Z
       if (points.length > 1) {
+        const { penToolConfig } = useEditorStore.getState()
+
         const commands = points.map((p, index) => {
           if (index === 0) return `M ${p.x} ${p.y}`
           const prev = points[index - 1]!
@@ -420,18 +429,25 @@ export default function FabricCanvas() {
         const pathData = commands.join(" ")
 
         const path = new Path(pathData, {
-          stroke: "#000000",
-          strokeWidth: 2,
+          stroke: penToolConfig.stroke,
+          strokeWidth: penToolConfig.strokeWidth,
+          strokeDashArray: penToolConfig.strokeDashArray || undefined,
+          strokeLineCap: penToolConfig.strokeLineCap,
+          strokeLineJoin: penToolConfig.strokeLineJoin,
           fill: "rgba(255, 0, 0, 0.5)",
           objectCaching: true,
           selectable: true,
           evented: true,
           originX: "left",
           originY: "top",
+          id: crypto.randomUUID(),
         })
 
         const command = new AddObjectCommand(canvas, path)
         useEditorStore.getState().history.execute(command)
+
+        // Auto-switch to select tool after completing path
+        setActiveTool("select")
       }
 
       pathPointsRef.current = []
@@ -461,22 +477,35 @@ export default function FabricCanvas() {
       canvas.off("mouse:up", handleMouseUp)
       canvas.off("mouse:dblclick", handleDblClick)
       window.removeEventListener("keydown", handleKeyDown)
+
+      // CRITICAL: Restore selection when leaving Pen Tool
+      canvas.selection = true
+      canvas.forEachObject((o) => (o.selectable = true))
+      canvas.requestRenderAll()
     }
-  }, [activeTool, setCanvas, history, syncLayers, setActiveTool])
+  }, [activeTool, setActiveTool])
 
   // --- Path Editing Logic ---
   const editingPathRef = useRef<Path | null>(null)
   const controlsRef = useRef<FabricObject[]>([])
+  const clearControlsRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
     if (!canvas) return
 
     const clearControls = () => {
+      // Notify Store
+      useEditorStore.getState().setEditingPath(null)
+
       controlsRef.current.forEach((c) => canvas.remove(c))
       controlsRef.current = []
       if (editingPathRef.current) {
         const oldPath = editingPathRef.current
+        // Remove ghost path if exists
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ghostPath = (oldPath as any)._ghostPath
+        if (ghostPath) canvas.remove(ghostPath)
 
         // Save the visual position of the first command before recreation
         const firstCmd = oldPath.path[0]
@@ -496,8 +525,13 @@ export default function FabricCanvas() {
         // Recreate the Path object entirely to force proper dimension calculation
         const newPath = new Path(newPathData, {
           fill: oldPath.fill,
-          stroke: oldPath.stroke,
-          strokeWidth: oldPath.strokeWidth,
+          // CRITICAL: Restore original stroke if we were highlighting it
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          stroke: (oldPath as any)._originalStroke || oldPath.stroke,
+
+          strokeWidth:
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (oldPath as any)._originalStrokeWidth || oldPath.strokeWidth,
           objectCaching: true,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           id: (oldPath as any).id,
@@ -539,9 +573,22 @@ export default function FabricCanvas() {
       canvas.requestRenderAll()
     }
 
+    // Expose clearControls to be callable from outside (e.g., setActivePage)
+    clearControlsRef.current = clearControls
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(canvas as any).exitEditMode = clearControls
+
     const updatePath = () => {
       const pathObj = editingPathRef.current
       if (!pathObj) return
+
+      // Sync ghost path
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ghostPath = (pathObj as any)._ghostPath as Path
+      if (ghostPath) {
+        // Sync path data so ghost shape matches original
+        ghostPath.set({ path: pathObj.path })
+      }
 
       // Mark as dirty so Fabric re-renders the path with new coordinates
       // Don't recalculate bounding box during drag - it would change the coordinate system
@@ -644,6 +691,7 @@ export default function FabricCanvas() {
         // Custom props
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         data: { type, pathCmd, index } as any,
+        excludeFromExport: true, // CRITICAL: Do not save controls to JSON
       })
       return circle
     }
@@ -659,6 +707,7 @@ export default function FabricCanvas() {
         evented: false,
         originX: "center",
         originY: "center",
+        excludeFromExport: true, // CRITICAL: Do not save guidelines to JSON
       })
       return line
     }
@@ -666,11 +715,78 @@ export default function FabricCanvas() {
     const enterEditMode = (pathObj: Path) => {
       if (editingPathRef.current) clearControls()
 
+      // Notify Store for UI updates
+      useEditorStore.getState().setEditingPath(pathObj)
+
       editingPathRef.current = pathObj
+
+      // 1. Disable interaction on the main path (so mouse ignores fill)
       pathObj.selectable = false
-      pathObj.evented = false // Prevent any interaction with path while editing
-      pathObj.objectCaching = false // Disable caching so path can render beyond original bounds
-      canvas.discardActiveObject() // Deselect the path
+      pathObj.evented = false
+      pathObj.objectCaching = false
+
+      // 2. Create Ghost Path for interaction (Stroke Only)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ghostPath = new Path(pathObj.path as any, {
+        objectCaching: false,
+        fill: "", // Transparent fill prevents mouse detection on fill area
+        // CRITICAL: Must not be fully transparent for hit detection to work!
+        stroke: "rgba(0,0,0,0.01)",
+        strokeWidth: Math.max(pathObj.strokeWidth || 1, 5), // Minimum clickable width for better UX
+        selectable: false,
+        evented: true, // This object captures events
+        perPixelTargetFind: true, // CRITICAL: Only stroke pixels trigger events
+
+        // Match transform to align perfectly
+        left: pathObj.left,
+        top: pathObj.top,
+        scaleX: pathObj.scaleX,
+        scaleY: pathObj.scaleY,
+        angle: pathObj.angle,
+        originX: pathObj.originX,
+        originY: pathObj.originY,
+        pathOffset: pathObj.pathOffset,
+
+        excludeFromExport: true, // Don't save
+      })
+      canvas.add(ghostPath)
+
+      // Attach to pathObj for updates and cleanup
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(pathObj as any)._ghostPath = ghostPath
+
+      canvas.discardActiveObject() // Deselect everything
+
+      // 3. Hover Logic on Ghost Path
+      const highlightColor = "#4f46e5"
+
+      ghostPath.on("mouseover", () => {
+        ghostPath.set({
+          stroke: highlightColor,
+          strokeWidth: Math.max(pathObj.strokeWidth || 1, 5), // Ensure highlight maintains clickable width
+        })
+        canvas.requestRenderAll()
+      })
+
+      ghostPath.on("mouseout", () => {
+        ghostPath.set({ stroke: "rgba(0,0,0,0.01)" })
+        canvas.requestRenderAll()
+      })
+
+      ghostPath.on("mousedown", () => {
+        // Clicking line just ensures we don't accidentally select something else
+        canvas.discardActiveObject()
+        canvas.requestRenderAll()
+      })
+
+      // 4. Sync prop changes (e.g. from panel) to Ghost Path
+      const syncProps = () => {
+        // Only need to sync dimensions/strokeWidth. Path data handled by updatePath.
+        ghostPath.set({ strokeWidth: pathObj.strokeWidth })
+        canvas.requestRenderAll()
+      }
+      pathObj.on("modified", syncProps)
+
       canvas.requestRenderAll()
 
       // Ensure we have absolute coordinates for controls?
@@ -786,6 +902,11 @@ export default function FabricCanvas() {
     const handleDblClick = (e: any) => {
       if (activeTool !== "select") return
       if (e.target && e.target.type === "path") {
+        // Prevent re-entry if already editing this path (or a replacement of it)
+        // Since we recreate paths, checking reference equality might be tricky if user clicks fast.
+        // But usually editingPathRef.current is the active one.
+        if (editingPathRef.current === e.target) return
+
         enterEditMode(e.target as Path)
       }
     }
