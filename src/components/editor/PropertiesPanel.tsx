@@ -235,6 +235,132 @@ export default function PropertiesPanel() {
     return null
   }
 
+  // Check if it's a Path Control Point (Anchor)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((activeObject as any).data?.type === "anchor") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = (activeObject as any).data
+    return (
+      <div className="bg-background text-foreground flex h-full w-full flex-col">
+        <div className="space-y-6 p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+              Path Node {data.index}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-muted-foreground text-[10px] uppercase">
+                X
+              </label>
+              <NumberInput
+                value={Math.round(activeObject.left || 0)}
+                onChange={(val) => {
+                  if (activeObject && canvas) {
+                    const originalValue = activeObject.left
+                    const command = new ModifyObjectCommand(
+                      activeObject,
+                      { left: val },
+                      { left: originalValue }
+                    )
+                    history.execute(command)
+                    // Trigger update immediately manually if needed,
+                    // but ModifyObjectCommand triggers 'object:modified' usually?
+                    // No, it sets value. We might need to fire event manually or rely on FabricCanvas listener.
+                    // FabricCanvas listens to 'object:modified'. ModifyObjectCommand does NOT fire it by default?
+                    // Let's check ModifyObjectCommand.
+                    // Usually commands just set properties.
+                    // We explicitly fire it to ensure FabricCanvas syncs the path.
+                    canvas.fire("object:modified", { target: activeObject })
+                  }
+                }}
+                className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted-foreground text-[10px] uppercase">
+                Y
+              </label>
+              <NumberInput
+                value={Math.round(activeObject.top || 0)}
+                onChange={(val) => {
+                  if (activeObject && canvas) {
+                    const originalValue = activeObject.top
+                    const command = new ModifyObjectCommand(
+                      activeObject,
+                      { top: val },
+                      { top: originalValue }
+                    )
+                    history.execute(command)
+                    canvas.fire("object:modified", { target: activeObject })
+                  }
+                }}
+                className="bg-input/50 focus:border-primary focus:ring-primary border-input text-foreground w-full rounded border p-1.5 text-sm focus:ring-1 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 border-t pt-4">
+            <label className="text-muted-foreground block text-xs font-medium uppercase">
+              Node Type
+            </label>
+            <div className="flex gap-2">
+              {/* Check current type */}
+              {data.pathCmd &&
+                (data.pathCmd[0] === "L" || data.pathCmd[0] === "C") && (
+                  <>
+                    <button
+                      onClick={() => {
+                        if (canvas)
+                          canvas.fire("node:type:change", {
+                            target: activeObject,
+                            mode: "sharp",
+                          })
+                      }}
+                      className={`flex-1 rounded border px-3 py-2 text-xs font-medium transition-colors ${data.pathCmd[0] === "L" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                    >
+                      Sharp
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (canvas)
+                          canvas.fire("node:type:change", {
+                            target: activeObject,
+                            mode: "smooth",
+                          })
+                      }}
+                      className={`flex-1 rounded border px-3 py-2 text-xs font-medium transition-colors ${data.pathCmd[0] === "C" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                    >
+                      Smooth
+                    </button>
+                  </>
+                )}
+              {data.pathCmd && data.pathCmd[0] === "M" && (
+                <div className="text-muted-foreground text-[10px] italic">
+                  Start Node (Fixed)
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <button
+              onClick={() => {
+                if (canvas) {
+                  canvas.fire("node:delete", { target: activeObject })
+                }
+              }}
+              className="bg-destructive/10 text-destructive hover:bg-destructive/20 w-full rounded border border-transparent px-3 py-2 text-xs font-medium transition-colors"
+            >
+              Delete Node
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateProperty = (key: string, value: any) => {
     if (activeObject && canvas) {

@@ -477,6 +477,18 @@ export default function FabricCanvas() {
       controlsRef.current = []
       if (editingPathRef.current) {
         const oldPath = editingPathRef.current
+
+        // Save the visual position of the first command before recreation
+        const firstCmd = oldPath.path[0]
+        if (!firstCmd || firstCmd.length < 3) return
+
+        // Get world position of first point BEFORE recreation
+        const oldMatrix = oldPath.calcTransformMatrix()
+        const oldOffset = oldPath.pathOffset || { x: 0, y: 0 }
+        const oldLocalX = firstCmd[1]! - oldOffset.x
+        const oldLocalY = firstCmd[2]! - oldOffset.y
+        const oldWorldPt = new Point(oldLocalX, oldLocalY).transform(oldMatrix)
+
         // Create a new array reference to force Fabric.js to recalculate dimensions
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const newPathData = oldPath.path.map((cmd: any) => [...cmd]) as any
@@ -486,12 +498,9 @@ export default function FabricCanvas() {
           fill: oldPath.fill,
           stroke: oldPath.stroke,
           strokeWidth: oldPath.strokeWidth,
-          objectCaching: false, // Keep caching disabled
+          objectCaching: true,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          id: (oldPath as any).id, // Preserve the ID
-          // Preserve transform properties to maintain position, scale, and rotation
-          left: oldPath.left,
-          top: oldPath.top,
+          id: (oldPath as any).id,
           scaleX: oldPath.scaleX,
           scaleY: oldPath.scaleY,
           angle: oldPath.angle,
@@ -499,15 +508,31 @@ export default function FabricCanvas() {
           originY: oldPath.originY,
           flipX: oldPath.flipX,
           flipY: oldPath.flipY,
-          // Restore interaction properties
           selectable: true,
           evented: true,
+        })
+
+        // Get world position of first point AFTER recreation with left=0, top=0
+        const newMatrix = newPath.calcTransformMatrix()
+        const newOffset = newPath.pathOffset || { x: 0, y: 0 }
+        const newLocalX = firstCmd[1]! - newOffset.x
+        const newLocalY = firstCmd[2]! - newOffset.y
+        const newWorldPt = new Point(newLocalX, newLocalY).transform(newMatrix)
+
+        // Adjust position so first point stays at same world position
+        const deltaX = oldWorldPt.x - newWorldPt.x
+        const deltaY = oldWorldPt.y - newWorldPt.y
+
+        newPath.set({
+          left: (newPath.left || 0) + deltaX,
+          top: (newPath.top || 0) + deltaY,
         })
 
         // Remove old path and add new one
         canvas.remove(oldPath)
         canvas.add(newPath)
         canvas.setActiveObject(newPath)
+        newPath.setCoords()
 
         editingPathRef.current = null
       }
