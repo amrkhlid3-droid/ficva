@@ -1036,6 +1036,12 @@ export default function FabricCanvas() {
         invertedMatrix
       )
 
+      // Helper to convert Path Coordinate to Canvas Coordinate
+      const toWorld = (x: number, y: number) => {
+        const off = pathObj.pathOffset || { x: 0, y: 0 }
+        return new Point(x - off.x, y - off.y).transform(matrix)
+      }
+
       // Convert local coordinates back to path coordinates by adding pathOffset
       const offset = pathObj.pathOffset || { x: 0, y: 0 }
       const rawX = localPoint.x + offset.x
@@ -1071,9 +1077,29 @@ export default function FabricCanvas() {
             const py = prevCmd[6] as number
             const dx = rawX - px
             const dy = rawY - py
+
+            // New coords for mirrored handle (Handle In of Prev)
+            const newHx = px - dx
+            const newHy = py - dy
+
             // Target: Handle In of Prev (prevCmd[3], prevCmd[4])
-            prevCmd[3] = px - dx
-            prevCmd[4] = py - dy
+            prevCmd[3] = newHx
+            prevCmd[4] = newHy
+
+            // VISUAL SYNC: Find the control for prevCmd's handle_out (which is CP2)
+            // Wait: CP2 of prevCmd is named "handle_out" in createControl (line 962)
+            // It has index = prevIndex
+            const mirroredControl = (
+              controlsRef.current as ControlPoint[]
+            ).find(
+              (c) => c.data?.type === "handle_out" && c.data.index === prevIndex
+            )
+
+            if (mirroredControl) {
+              const worldPt = toWorld(newHx, newHy)
+              mirroredControl.set({ left: worldPt.x, top: worldPt.y })
+              mirroredControl.setCoords()
+            }
           }
         }
       } else if (data.type === "handle_out") {
@@ -1097,9 +1123,30 @@ export default function FabricCanvas() {
               const py = cmd[6] as number
               const dx = rawX - px
               const dy = rawY - py
+
+              // New coords for mirrored handle
+              const newHx = px - dx
+              const newHy = py - dy
+
               // Target: Handle Out of Curr (nextCmd[1], nextCmd[2])
-              nextCmd[1] = px - dx
-              nextCmd[2] = py - dy
+              nextCmd[1] = newHx
+              nextCmd[2] = newHy
+
+              // VISUAL SYNC: Find the control for nextCmd's handle_in (which is CP1)
+              // CP1 of nextCmd is named "handle_in" in createControl (line 954)
+              // It has index = nextIndex
+              const mirroredControl = (
+                controlsRef.current as ControlPoint[]
+              ).find(
+                (c) =>
+                  c.data?.type === "handle_in" && c.data.index === nextIndex
+              )
+
+              if (mirroredControl) {
+                const worldPt = toWorld(newHx, newHy)
+                mirroredControl.set({ left: worldPt.x, top: worldPt.y })
+                mirroredControl.setCoords()
+              }
             }
           }
         }
