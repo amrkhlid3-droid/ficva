@@ -746,7 +746,10 @@ export default function FabricCanvas() {
     }
 
     const createLine = (
-        const data = ctrl.data
+      p1: { x: number; y: number },
+      p2: { x: number; y: number }
+    ) => {
+      const line = new Line([p1.x, p1.y, p2.x, p2.y], {
         if (!data) return
 
         if (data.type === "anchor") {
@@ -792,12 +795,13 @@ export default function FabricCanvas() {
       canvas.requestRenderAll()
     }
 
+    // createControl - Updated for node-based architecture
     const createControl = (
       x: number,
       y: number,
       type: "anchor" | "handle_in" | "handle_out",
-      pathCmd: PathCommand,
-      index: number,
+      pathCmd: PathCommand | null,
+      nodeIndex: number,
       nodeMode: NodeMode
     ) => {
       const circle = new Circle({
@@ -812,10 +816,9 @@ export default function FabricCanvas() {
         hasControls: false,
         hasBorders: false,
         selectable: true,
-        padding: type === "anchor" ? 10 : 5, // Increase hit area
-        // Custom props
-        data: { type, pathCmd, index, nodeMode },
-        excludeFromExport: true, // CRITICAL: Do not save controls to JSON
+        padding: type === "anchor" ? 10 : 5,
+        data: { type, nodeIndex },
+        excludeFromExport: true,
       })
       return circle as ControlPoint
     }
