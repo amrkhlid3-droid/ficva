@@ -1,8 +1,10 @@
-import type { PathNode, CustomPathData } from "@/types/fabric"
+import type { PathNode, CustomPathData, NodeMode } from "@/types/fabric"
 
 // PathCommand 是 SVG 路径命令的数组表示
 // 例如: ['M', 100, 100] 或 ['C', x1, y1, x2, y2, x, y]
-type PathCommand = (string | number)[]
+interface PathCommand extends Array<string | number> {
+  nodeMode?: NodeMode
+}
 
 /**
  * 核心生成器：将自定义节点数组转换为 SVG Path Commands

@@ -12,7 +12,9 @@ import { svgPathToNodes } from "@/lib/editor/pathConverter"
 import { nodesToSvgPath } from "@/lib/editor/pathUtils"
 
 // 临时保留：PathCommand 类型（重写完成后会删除）
-type PathCommand = (string | number)[]
+interface PathCommand extends Array<string | number> {
+  nodeMode?: NodeMode
+}
 
 /**
  * Control Point 数据结构（节点模式）
@@ -731,11 +733,19 @@ export default function FabricCanvas() {
       ghostPath.dirty = true
     }
 
-    // === NEW: Simplified refresh (uses enterEditMode) ===
-    const refreshControlLines = () => {
-      const handleOutByIndex: Map<number, ControlPoint> = new Map()
+      canvas.requestRenderAll()
+    }
 
-      controls.forEach((ctrl) => {
+    // === Simplified refresh (re-initializes controls) ===
+    const refreshControlLines = () => {
+      if (!editingPathRef.current) return
+      const pathWithData = editingPathRef.current as EditablePath & { customPathData?: CustomPathData }
+      if (pathWithData.customPathData) {
+        enterEditMode(editingPathRef.current)
+      }
+    }
+
+    const createLine = (
         const data = ctrl.data
         if (!data) return
 
@@ -1007,17 +1017,19 @@ export default function FabricCanvas() {
       const matrix = pathObj.calcTransformMatrix()
       // Transform path coordinates to canvas coordinates
       // Path coordinates are relative to pathOffset (center of bounding box)
-      // We need to convert to local space, then apply the object's transform matrix
+      // We need to convert to local space, then apply the object's      // Transform function that will be reused
       const transformPoint = (x: number, y: number) => {
         const offset = pathObj.pathOffset || { x: 0, y: 0 }
-        // Local coordinates: subtract pathOffset, then add half width/height to get top-left relative
         const localX = x - offset.x
         const localY = y - offset.y
-        return new Point(localX, localY).transform(matrix)
+        const localPt = new Point(localX, localY)
+        const worldPt = localPt.transform(matrix)
+        return worldPt
       }
 
-      const pathCommands = pathObj.path as PathCommand[] // [['M', x, y], ['C', ...], ['Z']]
-      const nodeModes = pathObj.nodeModes || []
+      // === OLD CODE (DISABLED) ===
+      // const pathCommands = pathObj.path as PathCommand[]
+      // const nodeModes = pathObj.nodeModes || []
 
       /*
       // ===  OLD SVG COMMAND LOOP (DISABLED) ===
