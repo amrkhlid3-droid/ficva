@@ -10,6 +10,9 @@ import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand
 import type { NodeMode, PathNode, CustomPathData } from "@/types/fabric"
 import { nodesToSvgPath, createEmptyNode } from "@/lib/editor/pathUtils"
 
+// 临时保留：PathCommand 类型（重写完成后会删除）
+type PathCommand = (string | number)[]
+
 /**
  * Control Point 数据结构（节点模式）
  * 直接引用节点数组索引，而非 SVG Command
