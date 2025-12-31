@@ -11,16 +11,17 @@ export class RemoveObjectsCommand implements Command {
   ) {
     const canvasObjects = canvas.getObjects()
     this.indices = objects.map((obj) => {
-       // Robust index lookup: match by Ref OR ID
-       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-       const id = (obj as any).id
-       const index = canvasObjects.findIndex(
-          (co) => co === obj || ((co as any).id === id && id !== undefined)
-       )
-       return {
-          object: obj,
-          index: index
-       }
+      // Robust index lookup: match by Ref OR ID
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const id = (obj as any).id
+      const index = canvasObjects.findIndex(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (co) => co === obj || ((co as any).id === id && id !== undefined)
+      )
+      return {
+        object: obj,
+        index: index,
+      }
     })
 
     // Debug log
@@ -38,7 +39,7 @@ export class RemoveObjectsCommand implements Command {
 
     // 2. Remove objects
     this.indices.forEach(({ object }) => {
-       safeRemove(this.canvas, object)
+      safeRemove(this.canvas, object)
     })
 
     this.canvas.requestRenderAll()
@@ -55,11 +56,11 @@ export class RemoveObjectsCommand implements Command {
     const sortedProps = [...this.indices].sort((a, b) => a.index - b.index)
 
     sortedProps.forEach(({ object, index }) => {
-       if (index === -1) {
-           this.canvas.add(object) // Fallback
-       } else {
-           this.canvas.insertAt(index, object)
-       }
+      if (index === -1) {
+        this.canvas.add(object) // Fallback
+      } else {
+        this.canvas.insertAt(index, object)
+      }
     })
 
     // Optionally restore selection?

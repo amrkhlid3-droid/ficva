@@ -23,6 +23,7 @@ export function Logo({ className, showTitle = true, size = "md" }: LogoProps) {
         className="relative flex items-center justify-center overflow-hidden"
         style={{ width, height }}
       >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.svg"
           alt="Ficva Logo"

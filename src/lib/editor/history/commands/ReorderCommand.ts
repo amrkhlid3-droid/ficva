@@ -6,7 +6,7 @@ export class ReorderCommand implements Command {
     private canvas: Canvas,
     private object: FabricObject,
     private fromIndex: number, // Visual index (0 = Top) via LayersPanel logic, OR Fabric index? Let's use Fabric Index to be safe and "dumb".
-    private toIndex: number     // Fabric Index (0 = bottom)
+    private toIndex: number // Fabric Index (0 = bottom)
   ) {}
 
   execute() {

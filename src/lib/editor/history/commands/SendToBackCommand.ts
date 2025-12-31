@@ -13,12 +13,15 @@ export class SendToBackCommand implements Command {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const id = (object as any).id
     this.originalIndex = canvasObjects.findIndex(
-        (co) => co === object || ((co as any).id === id && id !== undefined)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (co) => co === object || ((co as any).id === id && id !== undefined)
     )
   }
 
   execute() {
-    console.log(`[SendToBack] Moving object ${this.object.type} from ${this.originalIndex} to 0`)
+    console.log(
+      `[SendToBack] Moving object ${this.object.type} from ${this.originalIndex} to 0`
+    )
     this.canvas.moveObjectTo(this.object, 0)
     // this.canvas.sendObjectToBack(this.object)
     this.canvas.requestRenderAll()
@@ -26,7 +29,9 @@ export class SendToBackCommand implements Command {
   }
 
   undo() {
-    console.log(`[SendToBack:Undo] Moving object ${this.object.type} back to ${this.originalIndex}`)
+    console.log(
+      `[SendToBack:Undo] Moving object ${this.object.type} back to ${this.originalIndex}`
+    )
     this.canvas.moveObjectTo(this.object, this.originalIndex)
     this.canvas.requestRenderAll()
     this.canvas.fire("object:modified", { target: this.object })

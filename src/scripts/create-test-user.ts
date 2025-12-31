@@ -27,7 +27,10 @@ async function main() {
     user = newUser
   } else {
     // Ensure password is set
-    await db.update(users).set({ password: hashedPassword }).where(eq(users.email, email))
+    await db
+      .update(users)
+      .set({ password: hashedPassword })
+      .where(eq(users.email, email))
   }
 
   console.log(`TEST_USER_ID=${user.id}`)

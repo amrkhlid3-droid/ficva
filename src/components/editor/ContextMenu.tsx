@@ -16,6 +16,7 @@ export default function ContextMenu() {
     if (!canvas) return
 
     // Use Fabric's event system
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleContextMenu = (opt: any) => {
       const e = opt.e as MouseEvent
       e.preventDefault()

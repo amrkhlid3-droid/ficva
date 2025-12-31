@@ -39,8 +39,8 @@ export function svgPathToNodes(svgCommands: any[]): CustomPathData {
       const y = cmd[6]
 
       // 1. Update previous node's handleOut (using CP1)
-      if (nodes.length > 0) {
-        const prevNode = nodes[nodes.length - 1]
+      const prevNode = nodes[nodes.length - 1]
+      if (prevNode) {
         prevNode.handleOut = { x: cp1x - lastX, y: cp1y - lastY }
         // Attempt to guess mode: if handle is non-zero, assume mirrored (or free, but start with mirrored for safety)
         if (prevNode.handleOut.x !== 0 || prevNode.handleOut.y !== 0) {

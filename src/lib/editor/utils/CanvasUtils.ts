@@ -8,9 +8,10 @@ export const safeRemove = (canvas: Canvas, object: FabricObject) => {
 
   // 1. Try to find the LIVE object in the canvas
   // This handles issues where the object reference might be stale or proxied
-  const liveObject = canvas.getObjects().find(
-    (o) => o === object || ((o as any).id === id && id !== undefined)
-  )
+  const liveObject = canvas
+    .getObjects()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .find((o) => o === object || ((o as any).id === id && id !== undefined))
 
   if (liveObject) {
     try {
@@ -18,11 +19,15 @@ export const safeRemove = (canvas: Canvas, object: FabricObject) => {
       canvas.remove(liveObject)
 
       // 3. Verification & Force Removal
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const stillExists = (canvas as any)._objects?.includes(liveObject) || canvas.getObjects().includes(liveObject)
+      const stillExists =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (canvas as any)._objects?.includes(liveObject) ||
+        canvas.getObjects().includes(liveObject)
 
       if (stillExists) {
-        console.warn(`[CanvasUtils] Standard remove failed for ${id}. Attempting FORCE REMOVAL.`)
+        console.warn(
+          `[CanvasUtils] Standard remove failed for ${id}. Attempting FORCE REMOVAL.`
+        )
         // Force remove from private _objects array if accessible
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rawObjects = (canvas as any)._objects
@@ -43,9 +48,9 @@ export const safeRemove = (canvas: Canvas, object: FabricObject) => {
   } else {
     // Fallback: try removing the reference we were passed, just in case
     try {
-       canvas.remove(object)
+      canvas.remove(object)
     } catch (e) {
-       console.warn("[CanvasUtils] Fallback remove failed", e)
+      console.warn("[CanvasUtils] Fallback remove failed", e)
     }
   }
 }

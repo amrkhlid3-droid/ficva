@@ -44,13 +44,13 @@ export function useAutoSave() {
     // Then queue L3 (Server).
 
     const saveDataToLocal = () => {
-         import("@/utils/storage").then(({ saveToLocalStorage }) => {
-            saveToLocalStorage(projectId, {
-                pages,
-                activePageId,
-                projectName
-            })
-         })
+      import("@/utils/storage").then(({ saveToLocalStorage }) => {
+        saveToLocalStorage(projectId, {
+          pages,
+          activePageId,
+          projectName,
+        })
+      })
     }
     saveDataToLocal()
 
@@ -68,19 +68,23 @@ export function useAutoSave() {
         }
 
         const res = await fetch(`/api/projects/${projectId}`, {
-           method: "PATCH",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify(body),
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         })
 
         if (res.ok) {
-           setStatus("saved")
-           // TODO: Maybe clear unsaved flag in local storage?
-           import("@/utils/storage").then(({ saveToLocalStorage }) => {
-             saveToLocalStorage(projectId, { pages, activePageId, projectName }, false)
-           })
+          setStatus("saved")
+          // TODO: Maybe clear unsaved flag in local storage?
+          import("@/utils/storage").then(({ saveToLocalStorage }) => {
+            saveToLocalStorage(
+              projectId,
+              { pages, activePageId, projectName },
+              false
+            )
+          })
         } else {
-           setStatus("error")
+          setStatus("error")
         }
       } catch (e) {
         console.error("Server save failed", e)
@@ -95,7 +99,7 @@ export function useAutoSave() {
 
     // 200ms debounce
     debounceTimerRef.current = setTimeout(() => {
-       saveToServer()
+      saveToServer()
     }, 200)
 
     return () => {

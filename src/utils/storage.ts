@@ -17,7 +17,11 @@ interface LocalStorageData {
 
 const STORAGE_PREFIX = "ficva-project-"
 
-export function saveToLocalStorage(projectId: string, data: ProjectData, unsavedChanges: boolean = true) {
+export function saveToLocalStorage(
+  projectId: string,
+  data: ProjectData,
+  unsavedChanges: boolean = true
+) {
   if (typeof window === "undefined") return
 
   const storageData: LocalStorageData = {
@@ -28,13 +32,18 @@ export function saveToLocalStorage(projectId: string, data: ProjectData, unsaved
   }
 
   try {
-    localStorage.setItem(`${STORAGE_PREFIX}${projectId}`, JSON.stringify(storageData))
+    localStorage.setItem(
+      `${STORAGE_PREFIX}${projectId}`,
+      JSON.stringify(storageData)
+    )
   } catch (e) {
     console.error("Failed to save to localStorage", e)
   }
 }
 
-export function loadFromLocalStorage(projectId: string): LocalStorageData | null {
+export function loadFromLocalStorage(
+  projectId: string
+): LocalStorageData | null {
   if (typeof window === "undefined") return null
 
   try {

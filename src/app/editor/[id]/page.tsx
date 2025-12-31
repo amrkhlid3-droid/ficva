@@ -164,6 +164,7 @@ export default function EditorPage() {
 
                 finalData = {
                   ...projectData,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   json: localData.data as any,
                 }
 
@@ -176,7 +177,9 @@ export default function EditorPage() {
                 saveToLocalStorage(
                   params.id as string,
                   {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     pages: (projectData.json as any).pages,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     activePageId: (projectData.json as any).activePageId,
                     projectName: projectData.name,
                   },
@@ -186,17 +189,22 @@ export default function EditorPage() {
             }
 
             // Initialize Store
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             if (finalData.json && (finalData.json as any).pages) {
               // Ensure activePageId is valid
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               let initialActiveId = (finalData.json as any).activePageId
               if (
                 !initialActiveId &&
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (finalData.json as any).pages.length > 0
               ) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 initialActiveId = (finalData.json as any).pages[0].id
               }
 
               useEditorStore.setState({
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 pages: (finalData.json as any).pages,
                 activePageId: initialActiveId,
                 // Use name from server or local? Local might have new name?
@@ -211,12 +219,15 @@ export default function EditorPage() {
                     (projectData.updatedAt
                       ? new Date(projectData.updatedAt).getTime()
                       : 0)
-                    ? (localData.data as any).projectName
+                    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      (localData.data as any).projectName
                     : finalData.name,
                 projectId: params.id as string,
               })
               // Load active page into canvas
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const activePage = (finalData.json as any).pages.find(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (p: any) => p.id === initialActiveId
               )
               if (activePage && activePage.json) {
@@ -304,6 +315,7 @@ export default function EditorPage() {
       })
       finishLoading()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, projectData]) // dependency on isCanvasReady removed to allow re-runs on canvas change
 
   return (
