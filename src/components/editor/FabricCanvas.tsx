@@ -719,6 +719,8 @@ export default function FabricCanvas() {
         ghostPath.pathOffset = pathObj.pathOffset
         ghostPath.width = pathObj.width
         ghostPath.height = pathObj.height
+        ghostPath.left = pathObj.left
+        ghostPath.top = pathObj.top
 
         ghostPath.dirty = true
       }
@@ -1409,11 +1411,38 @@ export default function FabricCanvas() {
             // In exists, set Out to mirror In
             newHOutX = anchorX - dx
             newHOutY = anchorY - dy
+            newHInX = hInX
+            newHInY = hInY
           }
         }
 
-        // WRITE BACK TO DATA
-        if (cmd[0] === "C") {
+        // WRITE BACK TO DATA & PROMOTE L -> C
+
+        // 1. Current Command (cmd)
+        if (cmd[0] === "L") {
+          // Promote L -> C
+          let prevX = 0,
+            prevY = 0
+          if (data.index > 0) {
+            const prev = pathData[data.index - 1]
+            prevX = prev[prev.length - 2] as number
+            prevY = prev[prev.length - 1] as number
+          } else {
+            prevX = anchorX
+            prevY = anchorY
+          }
+          cmd.splice(
+            0,
+            cmd.length,
+            "C",
+            prevX,
+            prevY,
+            newHInX,
+            newHInY,
+            anchorX,
+            anchorY
+          )
+        } else if (cmd[0] === "C") {
           cmd[3] = newHInX
           cmd[4] = newHInY
         } else if (cmd[0] === "M") {
@@ -1422,7 +1451,6 @@ export default function FabricCanvas() {
 
           // Check for Z -> C Promotion (Start Point Mirroring)
           if (closingCmd && closingCmd[0] === "Z") {
-            // Need Last Point coordinates for CP1 default (Straight)
             let prevX = 0,
               prevY = 0
             const prevCmd = pathData[lastIdx - 1]
@@ -1430,9 +1458,6 @@ export default function FabricCanvas() {
               prevX = prevCmd[prevCmd.length - 2] as number
               prevY = prevCmd[prevCmd.length - 1] as number
             }
-
-            // Insert C: CP1=Last(Straight), CP2=newHIn, Anchor=M
-            // ['C', cp1x, cp1y, cp2x, cp2y, x, y]
             const newC: PathCommand = [
               "C",
               prevX,
@@ -1449,21 +1474,31 @@ export default function FabricCanvas() {
           }
         }
 
-        // Handle Out
+        // 2. Next Command - HANDLE OUT
         if (nextCmd) {
-          if (nextCmd[0] === "C") {
+          if (nextCmd[0] === "L") {
+            // Promote L -> C
+            const nX = nextCmd[1] as number
+            const nY = nextCmd[2] as number
+            nextCmd.splice(
+              0,
+              nextCmd.length,
+              "C",
+              newHOutX,
+              newHOutY,
+              nX,
+              nY,
+              nX,
+              nY
+            )
+          } else if (nextCmd[0] === "C") {
             nextCmd[1] = newHOutX
             nextCmd[2] = newHOutY
           } else if (nextCmd[0] === "Z") {
-            // Promote Z to C (Last Point Mirroring)
-            // Segment: CurrentAnchor -> M
-            // We need M coordinates for Anchor
+            // Promote Z -> C (Last Point Mirroring)
             const startCmd = pathData[0]
             const mX = startCmd[1] as number
             const mY = startCmd[2] as number
-
-            // Insert C: CP1=newHOut, CP2=M(Straight), Anchor=M
-            // ['C', cp1x, cp1y, cp2x, cp2y, x, y]
             const newC: PathCommand = ["C", newHOutX, newHOutY, mX, mY, mX, mY]
             pathData.splice(data.index + 1, 0, newC)
           }
