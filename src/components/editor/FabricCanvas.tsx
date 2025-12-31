@@ -1469,127 +1469,135 @@ export default function FabricCanvas() {
       if (!pathObj.nodeModes) pathObj.nodeModes = []
       pathObj.nodeModes[data.index] = mode
 
+      // --- HELPER: Identify Connected Commands ---
+
+      // 1. Identify "Next Cmd" (Controlled by Handle Out)
+      // For Node i, Handle Out is CP1 of Node i+1.
+      const nextCmdIndex = data.index + 1
+      const nextCmd =
+        nextCmdIndex < pathData.length ? pathData[nextCmdIndex] : null
+      let handleOutCmd: PathCommand | null = null
+      if (nextCmd && nextCmd[0] === "C") {
+        handleOutCmd = nextCmd
+      }
+
+      // 2. Identify "Handle In Cmd" (Controlled by Handle In)
+      // For Node i (C), Handle In is CP2 of Node i.
+      // For Node 0 (M), Handle In is CP2 of Closing Node.
+      let handleInCmd: PathCommand | null = null
+
+      if (cmd[0] === "M") {
+        // Find Closing Command (The C before Z)
+        const zIndex = pathData.findIndex((c) => c[0] === "Z")
+        if (zIndex > 0) {
+          const closingCmd = pathData[zIndex - 1]
+          if (closingCmd && closingCmd[0] === "C") {
+            handleInCmd = closingCmd
+          }
+        }
+      } else if (cmd[0] === "C") {
+        handleInCmd = cmd
+      }
+
+      // --- APPLY MODE LOGIC ---
+
       // 1. STRAIGHT: Collapse handles
       if (mode === "straight") {
-        const anchorX = cmd[cmd.length - 2] as number
-        const anchorY = cmd[cmd.length - 1] as number
+        const ax = (cmd[0] === "M" ? cmd[1] : cmd[5]) as number
+        const ay = (cmd[0] === "M" ? cmd[2] : cmd[6]) as number
 
-        // Collapse Handle In (CP2 of current command)
-        if (cmd[0] === "C") {
-          cmd[3] = anchorX
-          cmd[4] = anchorY
+        // Collapse In
+        if (handleInCmd) {
+          // CP2 is index 3,4
+          handleInCmd[3] = ax
+          handleInCmd[4] = ay
         }
-
-        // Collapse Handle Out (CP1 of next command)
-        const nextCmd = pathData[data.index + 1]
-        if (nextCmd && nextCmd[0] === "C") {
-          nextCmd[1] = anchorX
-          nextCmd[2] = anchorY
+        // Collapse Out
+        if (handleOutCmd) {
+          // CP1 is index 1,2
+          handleOutCmd[1] = ax
+          handleOutCmd[2] = ay
         }
       }
 
-      // 2. MIRRORED: Expand handles if they were straight
+      // 2. MIRRORED: Expand handles
       else if (mode === "mirrored") {
-        let anchorX = 0
-        let anchorY = 0
-        let hInX: number | undefined
-        let hInY: number | undefined
+        const ax = (cmd[0] === "M" ? cmd[1] : cmd[5]) as number
+        const ay = (cmd[0] === "M" ? cmd[2] : cmd[6]) as number
 
-        // READ CURRENT STATE
-        if (cmd[0] === "C") {
-          anchorX = cmd[5] as number
-          anchorY = cmd[6] as number
-          hInX = cmd[3] as number
-          hInY = cmd[4] as number
-        } else if (cmd[0] === "M") {
-          // M x y
-          anchorX = cmd[1] as number
-          anchorY = cmd[2] as number
-          // Handle In for M is Closing Cmd's CP2
-          const lastIdx = pathData.length - 1
-          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
-          if (isClosed) {
-            const closingCmd = pathData[lastIdx - 1]
-            if (closingCmd && closingCmd[0] === "C") {
-              hInX = closingCmd[3] as number
-              hInY = closingCmd[4] as number
-            }
-          }
+        let hInX = ax,
+          hInY = ay
+        let hOutX = ax,
+          hOutY = ay
+
+        // Read existing positions (if valid)
+        if (handleInCmd) {
+          const cx = handleInCmd[3] as number
+          const cy = handleInCmd[4] as number
+          // Safety check: is it a valid number?
+          if (!isNaN(cx)) hInX = cx
+          if (!isNaN(cy)) hInY = cy
+        }
+        if (handleOutCmd) {
+          const cx = handleOutCmd[1] as number
+          const cy = handleOutCmd[2] as number
+          if (!isNaN(cx)) hOutX = cx
+          if (!isNaN(cy)) hOutY = cy
         }
 
-        // Handle Out (nextCmd CP1)
-        const nextCmd = pathData[data.index + 1]
-        let hOutX: number | undefined
-        let hOutY: number | undefined
-        if (nextCmd && nextCmd[0] === "C") {
-          hOutX = nextCmd[1] as number
-          hOutY = nextCmd[2] as number
-        }
-
-        // Defaults if undefined
-        if (hInX === undefined) hInX = anchorX
-        if (hInY === undefined) hInY = anchorY
-        if (hOutX === undefined) hOutX = anchorX
-        if (hOutY === undefined) hOutY = anchorY
-
+        // Calculate new positions
         const isCollapsedIn =
-          Math.abs(hInX - anchorX) < 0.1 && Math.abs(hInY - anchorY) < 0.1
+          Math.abs(hInX - ax) < 0.1 && Math.abs(hInY - ay) < 0.1
         const isCollapsedOut =
-          Math.abs(hOutX - anchorX) < 0.1 && Math.abs(hOutY - anchorY) < 0.1
+          Math.abs(hOutX - ax) < 0.1 && Math.abs(hOutY - ay) < 0.1
 
-        let newHInX = hInX
-        let newHInY = hInY
-        let newHOutX = hOutX
-        let newHOutY = hOutY
+        let newInX = hInX,
+          newInY = hInY
+        let newOutX = hOutX,
+          newOutY = hOutY
 
-        // Logic to calculate NEW positions
         if (isCollapsedIn && isCollapsedOut) {
-          // Create new handles horizontal
-          newHInX = anchorX - 20
-          newHInY = anchorY
-          newHOutX = anchorX + 20
-          newHOutY = anchorY
+          // Default expansion: Horizontal 20px
+          newInX = ax - 20
+          newInY = ay
+          newOutX = ax + 20
+          newOutY = ay
         } else {
-          // Already has handles, align them
-          const dx = hInX - anchorX
-          const dy = hInY - anchorY
-          if (dx === 0 && dy === 0) {
-            // In collapsed, use Out to set In
-            const dxOut = hOutX - anchorX
-            const dyOut = hOutY - anchorY
-            newHInX = anchorX - dxOut
-            newHInY = anchorY - dyOut
+          // Enforce symmetry logic
+          const dx = hInX - ax
+          const dy = hInY - ay
+
+          // If In is explicit, set Out.
+          // If In is collapsed but Out is explicit, set In.
+          if (!isCollapsedIn) {
+            newOutX = ax - dx
+            newOutY = ay - dy
           } else {
-            // In exists, set Out to mirror In
-            newHOutX = anchorX - dx
-            newHOutY = anchorY - dy
+            const dxOut = hOutX - ax
+            const dyOut = hOutY - ay
+            newInX = ax - dxOut
+            newInY = ay - dyOut
           }
         }
 
-        // WRITE BACK TO DATA
-        if (cmd[0] === "C") {
-          cmd[3] = newHInX
-          cmd[4] = newHInY
-        } else if (cmd[0] === "M") {
-          const lastIdx = pathData.length - 1
-          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
-          if (isClosed) {
-            const closingCmd = pathData[lastIdx - 1]
-            if (closingCmd && closingCmd[0] === "C") {
-              closingCmd[3] = newHInX
-              closingCmd[4] = newHInY
-            }
-          }
+        // Apply updates
+        if (handleInCmd) {
+          handleInCmd[3] = newInX
+          handleInCmd[4] = newInY
         }
-
-        if (nextCmd && nextCmd[0] === "C") {
-          nextCmd[1] = newHOutX
-          nextCmd[2] = newHOutY
+        if (handleOutCmd) {
+          handleOutCmd[1] = newOutX
+          handleOutCmd[2] = newOutY
         }
       }
 
-      updatePath()
-      // Re-enter edit mode to refresh control visibility (Straight handles disappear)
+      // Finalize
+      pathObj.set({ path: pathData }) // Commit changes to object
+      pathObj.setCoords()
+      updatePath() // Update ghost
+
+      // Re-initialize controls to reflect new handle state (visibility/position)
+      // This is critical for "One Sided" bug - ensure both handles are instantiated visually
       enterEditMode(pathObj)
 
       // RESTORE SELECTION
