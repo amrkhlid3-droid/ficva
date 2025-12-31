@@ -1168,17 +1168,6 @@ export default function FabricCanvas() {
         if (cmd[0] === "C") {
           cmd[3] = (cmd[3] as number) + dx
           cmd[4] = (cmd[4] as number) + dy
-        } else if (cmd[0] === "M") {
-          // Handle In for M in closed path
-          const pathData = pathObj.path as PathCommand[]
-          const lastIdx = pathData.length - 1
-          if (pathData[lastIdx] && pathData[lastIdx][0] === "Z") {
-            const closingCmd = pathData[lastIdx - 1]
-            if (closingCmd && closingCmd[0] === "C") {
-              closingCmd[3] = (closingCmd[3] as number) + dx
-              closingCmd[4] = (closingCmd[4] as number) + dy
-            }
-          }
         }
 
         // Update Handle Out (CP1 of next command)
@@ -1319,18 +1308,6 @@ export default function FabricCanvas() {
         if (cmd[0] === "C") {
           cmd[3] = anchorX
           cmd[4] = anchorY
-        } else if (cmd[0] === "M") {
-          // Handle In for 'M' is the CP2 of the closing command (if closed)
-          const lastIdx = pathData.length - 1
-          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
-          if (isClosed) {
-            // The command closing the path (before Z)
-            const closingCmd = pathData[lastIdx - 1]
-            if (closingCmd && closingCmd[0] === "C") {
-              closingCmd[3] = anchorX
-              closingCmd[4] = anchorY
-            }
-          }
         }
 
         // Collapse Handle Out (CP1 of next command)
