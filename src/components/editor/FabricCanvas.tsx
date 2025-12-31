@@ -1060,9 +1060,40 @@ export default function FabricCanvas() {
       const cmd = data.pathCmd
 
       if (data.type === "anchor") {
+        // Calculate delta
+        const oldX = cmd[cmd.length - 2] as number
+        const oldY = cmd[cmd.length - 1] as number
+        const dx = rawX - oldX
+        const dy = rawY - oldY
+
         // Update anchor position in path data
         cmd[cmd.length - 2] = rawX
         cmd[cmd.length - 1] = rawY
+
+        // Update Handle In (CP2 of current command)
+        if (cmd[0] === "C") {
+          cmd[3] = (cmd[3] as number) + dx
+          cmd[4] = (cmd[4] as number) + dy
+        } else if (cmd[0] === "M") {
+          // Handle In for M in closed path
+          const pathData = pathObj.path as PathCommand[]
+          const lastIdx = pathData.length - 1
+          if (pathData[lastIdx][0] === "Z") {
+            const closingCmd = pathData[lastIdx - 1]
+            if (closingCmd && closingCmd[0] === "C") {
+              closingCmd[3] = (closingCmd[3] as number) + dx
+              closingCmd[4] = (closingCmd[4] as number) + dy
+            }
+          }
+        }
+
+        // Update Handle Out (CP1 of next command)
+        const pathData = pathObj.path as PathCommand[]
+        const nextCmd = pathData[data.index + 1]
+        if (nextCmd && nextCmd[0] === "C") {
+          nextCmd[1] = (nextCmd[1] as number) + dx
+          nextCmd[2] = (nextCmd[2] as number) + dy
+        }
       } else if (data.type === "handle_in") {
         // C x1 y1 x2 y2 x y - handle_in is x1 y1
         cmd[1] = rawX
