@@ -925,8 +925,41 @@ export default function FabricCanvas() {
       pathCommands.forEach((cmd, i) => {
         // INFER MODE if missing
         if (!cmd.nodeMode) {
-          if (cmd[0] === "L" || cmd[0] === "M") cmd.nodeMode = "straight"
-          else cmd.nodeMode = "mirrored"
+          if (cmd[0] === "C") {
+            const anchorX = cmd[5] as number
+            const anchorY = cmd[6] as number
+            const cp2X = cmd[3] as number
+            const cp2Y = cmd[4] as number
+
+            let prevX = 0,
+              prevY = 0
+            if (i > 0) {
+              const prev = pathCommands[i - 1]
+              prevX = prev[prev.length - 2] as number
+              prevY = prev[prev.length - 1] as number
+            } else {
+              // Usually C is not first, but if it is (Fabric quirk?), prev is Start
+              // If i=0, prevX=0?
+              // M is always first.
+            }
+
+            const cp1X = cmd[1] as number
+            const cp1Y = cmd[2] as number
+
+            const isSegmentLinear =
+              Math.abs(cp2X - anchorX) < 0.1 &&
+              Math.abs(cp2Y - anchorY) < 0.1 &&
+              Math.abs(cp1X - prevX) < 0.1 &&
+              Math.abs(cp1Y - prevY) < 0.1
+
+            if (isSegmentLinear) {
+              cmd.nodeMode = "straight"
+            } else {
+              cmd.nodeMode = "mirrored"
+            }
+          } else {
+            cmd.nodeMode = "straight"
+          }
         }
 
         const nodeMode: NodeMode = cmd.nodeMode || "straight"
@@ -935,14 +968,13 @@ export default function FabricCanvas() {
           const p = transformPoint(cmd[1] as number, cmd[2] as number)
           const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
-          canvas.bringObjectToFront(anchor) // Ensure top z-index
+          // canvas.bringObjectToFront(anchor) // Moved to end
           controlsRef.current.push(anchor)
         }
         if (cmd[0] === "L") {
           const p = transformPoint(cmd[1] as number, cmd[2] as number)
           const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
-          canvas.bringObjectToFront(anchor) // Ensure top z-index
           controlsRef.current.push(anchor)
         }
         if (cmd[0] === "C") {
@@ -953,7 +985,6 @@ export default function FabricCanvas() {
 
           const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
-          canvas.bringObjectToFront(anchor) // Ensure top z-index
           controlsRef.current.push(anchor)
 
           // ONLY CREATE HANDLES IF NOT STRAIGHT
@@ -1006,6 +1037,14 @@ export default function FabricCanvas() {
           }
         }
       })
+
+      // CRITICAL: Bring all anchors to front to ensure they are above any handles
+      controlsRef.current.forEach((c) => {
+        if (c.data?.type === "anchor") {
+          canvas.bringObjectToFront(c)
+        }
+      })
+
       canvas.requestRenderAll()
     }
 
