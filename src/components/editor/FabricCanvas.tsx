@@ -1189,6 +1189,33 @@ export default function FabricCanvas() {
       // Update source of truth
       pathObj.nodeModes = nodeModes
 
+      // === NODE-BASED CONTROL CREATION (NEW) ===
+      // 从 nodes 数组创建控件，替代上面的 SVG Command 遍历
+      const { nodes } = pathWithData.customPathData
+
+      nodes.forEach((node, nodeIndex) => {
+        const { anchor } = node
+        const p = transformPoint(anchor.x, anchor.y)
+
+        const anchorCtrl = createControl(
+          p.x,
+          p.y,
+          "anchor",
+          null as any, // pathCmd 不再需要
+          nodeIndex,
+          node.mode
+        )
+
+        // 更新 data 为新结构
+        anchorCtrl.data = {
+          type: "anchor",
+          nodeIndex: nodeIndex,
+        }
+
+        canvas.add(anchorCtrl)
+        controlsRef.current.push(anchorCtrl)
+      })
+
       // CRITICAL: Bring all anchors to front to ensure they are above any handles
       controlsRef.current.forEach((c) => {
         const cp = c as ControlPoint
