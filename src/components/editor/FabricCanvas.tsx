@@ -1179,16 +1179,32 @@ export default function FabricCanvas() {
 
       // 1. STRAIGHT: Collapse handles
       if (mode === "straight") {
-        // Collapse Handle In of this anchor (cmd[3], cmd[4]) -> anchor (cmd[5], cmd[6])
+        const anchorX = cmd[cmd.length - 2] as number
+        const anchorY = cmd[cmd.length - 1] as number
+
+        // Collapse Handle In (CP2 of current command)
         if (cmd[0] === "C") {
-          cmd[3] = cmd[5] as number
-          cmd[4] = cmd[6] as number
+          cmd[3] = anchorX
+          cmd[4] = anchorY
+        } else if (cmd[0] === "M") {
+          // Handle In for 'M' is the CP2 of the closing command (if closed)
+          const lastIdx = pathData.length - 1
+          const isClosed = pathData[lastIdx][0] === "Z"
+          if (isClosed) {
+            // The command closing the path (before Z)
+            const closingCmd = pathData[lastIdx - 1]
+            if (closingCmd && closingCmd[0] === "C") {
+              closingCmd[3] = anchorX
+              closingCmd[4] = anchorY
+            }
+          }
         }
-        // Collapse Handle Out of this anchor (nextCmd[1], nextCmd[2]) -> anchor (cmd[5], cmd[6])
+
+        // Collapse Handle Out (CP1 of next command)
         const nextCmd = pathData[data.index + 1]
         if (nextCmd && nextCmd[0] === "C") {
-          nextCmd[1] = cmd[5] as number
-          nextCmd[2] = cmd[6] as number
+          nextCmd[1] = anchorX
+          nextCmd[2] = anchorY
         }
       }
 
@@ -1272,7 +1288,92 @@ export default function FabricCanvas() {
       }
     }
 
+    const handleNodeHandleMode = (e: {
+      target: FabricObject
+      side: "in" | "out"
+      mode: "curve" | "line"
+    }) => {
+      if (!editingPathRef.current) return
+      const pathObj = editingPathRef.current
+      const pathData = pathObj.path as PathCommand[]
+
+      const target = e.target as ControlPoint
+      if (!target.data || target.data.type !== "anchor") return
+
+      const cmd = target.data.pathCmd
+      const idx = target.data.index
+
+      // Force mode to detached when manually controlling sides
+      cmd.nodeMode = "detached"
+
+      const anchorX = cmd[cmd.length - 2] as number
+      const anchorY = cmd[cmd.length - 1] as number
+
+      if (e.side === "in") {
+        // Handle In (CP2 of current command)
+        if (e.mode === "line") {
+          // Collapse to anchor
+          if (cmd[0] === "C") {
+            cmd[3] = anchorX
+            cmd[4] = anchorY
+          } else if (cmd[0] === "M") {
+            // M case
+            const lastIdx = pathData.length - 1
+            const isClosed = pathData[lastIdx][0] === "Z"
+            if (isClosed) {
+              const closingCmd = pathData[lastIdx - 1]
+              if (closingCmd && closingCmd[0] === "C") {
+                closingCmd[3] = anchorX
+                closingCmd[4] = anchorY
+              }
+            }
+          }
+        } else {
+          // Extend logic (Curve)
+          if (cmd[0] === "C") {
+            if (cmd[3] === anchorX && cmd[4] === anchorY) {
+              cmd[3] = anchorX - 20
+              cmd[4] = anchorY
+            }
+          }
+        }
+      }
+
+      if (e.side === "out") {
+        const nextCmd = pathData[idx + 1]
+        if (nextCmd && nextCmd[0] === "C") {
+          if (e.mode === "line") {
+            nextCmd[1] = anchorX
+            nextCmd[2] = anchorY
+          } else {
+            if (nextCmd[1] === anchorX && nextCmd[2] === anchorY) {
+              nextCmd[1] = anchorX + 20
+              nextCmd[2] = anchorY
+            }
+          }
+        }
+      }
+
+      updatePath()
+      enterEditMode(pathObj)
+
+      // Re-select anchor
+      const newControls = controlsRef.current
+      const newAnchor = newControls.find((c) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = (c as any).data
+        return d && d.type === "anchor" && d.index === idx
+      })
+
+      if (newAnchor) {
+        canvas.setActiveObject(newAnchor)
+        useEditorStore.getState().setSelectedObjects([newAnchor])
+        canvas.requestRenderAll()
+      }
+    }
+
     canvas.on("node:mode:change", handleNodeModeChange)
+    canvas.on("node:handle:mode", handleNodeHandleMode)
 
     canvas.on("mouse:dblclick", handleDblClick)
     canvas.on("mouse:down", handleMouseDown)
@@ -1282,6 +1383,8 @@ export default function FabricCanvas() {
       canvas.off("mouse:dblclick", handleDblClick)
       canvas.off("mouse:down", handleMouseDown)
       canvas.off("object:moving", handleObjectMoving)
+      canvas.off("node:mode:change", handleNodeModeChange)
+      canvas.off("node:handle:mode", handleNodeHandleMode)
       clearControls()
     }
   }, [activeTool, setCanvas]) // Re-bind if tool changes? Yes, to enable/disable.

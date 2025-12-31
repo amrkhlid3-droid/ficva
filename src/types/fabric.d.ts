@@ -8,5 +8,10 @@ declare module "fabric" {
       target: FabricObject
       mode: "straight" | "mirrored" | "detached"
     }
+    "node:handle:mode": {
+      target: FabricObject
+      side: "in" | "out"
+      mode: "curve" | "line"
+    }
   }
 }

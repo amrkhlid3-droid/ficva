@@ -480,6 +480,73 @@ export default function PropertiesPanel() {
                 </>
               )}
             </div>
+
+            {data.pathCmd && data.nodeMode !== "straight" && (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-muted-foreground px-1 text-[10px] font-medium">
+                    Handle In (Left)
+                  </span>
+                  <div className="bg-muted/20 flex rounded-md border p-0.5">
+                    <button
+                      onClick={() =>
+                        canvas?.fire("node:handle:mode", {
+                          target: activeObject,
+                          side: "in",
+                          mode: "curve",
+                        })
+                      }
+                      className="hover:bg-background flex-1 rounded-sm px-2 py-1 text-[10px] transition-all hover:shadow-sm"
+                    >
+                      Curve
+                    </button>
+                    <button
+                      onClick={() =>
+                        canvas?.fire("node:handle:mode", {
+                          target: activeObject,
+                          side: "in",
+                          mode: "line",
+                        })
+                      }
+                      className="hover:bg-background text-muted-foreground flex-1 rounded-sm px-2 py-1 text-[10px] transition-all hover:shadow-sm"
+                    >
+                      Line
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-muted-foreground px-1 text-[10px] font-medium">
+                    Handle Out (Right)
+                  </span>
+                  <div className="bg-muted/20 flex rounded-md border p-0.5">
+                    <button
+                      onClick={() =>
+                        canvas?.fire("node:handle:mode", {
+                          target: activeObject,
+                          side: "out",
+                          mode: "curve",
+                        })
+                      }
+                      className="hover:bg-background flex-1 rounded-sm px-2 py-1 text-[10px] transition-all hover:shadow-sm"
+                    >
+                      Curve
+                    </button>
+                    <button
+                      onClick={() =>
+                        canvas?.fire("node:handle:mode", {
+                          target: activeObject,
+                          side: "out",
+                          mode: "line",
+                        })
+                      }
+                      className="hover:bg-background text-muted-foreground flex-1 rounded-sm px-2 py-1 text-[10px] transition-all hover:shadow-sm"
+                    >
+                      Line
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-t pt-4">
