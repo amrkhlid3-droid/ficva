@@ -1177,6 +1177,32 @@ export default function FabricCanvas() {
           nextCmd[1] = (nextCmd[1] as number) + dx
           nextCmd[2] = (nextCmd[2] as number) + dy
         }
+
+        // STRICT CONSTRAINT ENFORCEMENT: Straight Nodes
+        // Ensure handles remain EXACTLY at anchor position (eliminate floating point drift)
+        if (data.nodeMode === "straight") {
+          // 1. Handle In
+          if (cmd[0] === "C") {
+            cmd[3] = rawX
+            cmd[4] = rawY
+          } else if (cmd[0] === "M") {
+            const lastIdx = pathData.length - 1
+            const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
+            if (isClosed) {
+              const closingCmd = pathData[lastIdx - 1]
+              if (closingCmd && closingCmd[0] === "C") {
+                closingCmd[3] = rawX
+                closingCmd[4] = rawY
+              }
+            }
+          }
+
+          // 2. Handle Out
+          if (nextCmd && nextCmd[0] === "C") {
+            nextCmd[1] = rawX
+            nextCmd[2] = rawY
+          }
+        }
       } else if (data.type === "handle_in") {
         // C x1 y1 x2 y2 x y - handle_in is x1 y1
         cmd[1] = rawX
