@@ -25,14 +25,7 @@ export default function PropertiesPanel() {
   // If selecting a control point in edit mode, fall back to the editing path
   const selection = selectedObjects?.[0]
 
-  const isControlPoint =
-    selection &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (selection as any).data &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ["anchor", "handle_in", "handle_out"].includes((selection as any).data.type)
-
-  const activeObject = isControlPoint ? editingPath : selection || editingPath
+  const activeObject = selection || editingPath
 
   // Track initial value for slider operations to avoid spamming history
   // MUST BE HERE before any conditional returns
@@ -446,39 +439,45 @@ export default function PropertiesPanel() {
             </label>
             <div className="flex gap-2">
               {/* Check current type */}
-              {data.pathCmd &&
-                (data.pathCmd[0] === "L" || data.pathCmd[0] === "C") && (
-                  <>
-                    <button
-                      onClick={() => {
-                        if (canvas)
-                          canvas.fire("node:type:change", {
-                            target: activeObject,
-                            mode: "sharp",
-                          })
-                      }}
-                      className={`flex-1 rounded border px-3 py-2 text-xs font-medium transition-colors ${data.pathCmd[0] === "L" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
-                    >
-                      Sharp
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (canvas)
-                          canvas.fire("node:type:change", {
-                            target: activeObject,
-                            mode: "smooth",
-                          })
-                      }}
-                      className={`flex-1 rounded border px-3 py-2 text-xs font-medium transition-colors ${data.pathCmd[0] === "C" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
-                    >
-                      Smooth
-                    </button>
-                  </>
-                )}
-              {data.pathCmd && data.pathCmd[0] === "M" && (
-                <div className="text-muted-foreground text-[10px] italic">
-                  Start Node (Fixed)
-                </div>
+              {data.pathCmd && (
+                <>
+                  <button
+                    onClick={() => {
+                      if (canvas)
+                        canvas.fire("node:mode:change", {
+                          target: activeObject,
+                          mode: "straight",
+                        })
+                    }}
+                    className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "straight" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                  >
+                    Straight
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (canvas)
+                        canvas.fire("node:mode:change", {
+                          target: activeObject,
+                          mode: "mirrored",
+                        })
+                    }}
+                    className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "mirrored" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                  >
+                    Mirrored
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (canvas)
+                        canvas.fire("node:mode:change", {
+                          target: activeObject,
+                          mode: "detached",
+                        })
+                    }}
+                    className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "detached" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                  >
+                    Detached
+                  </button>
+                </>
               )}
             </div>
           </div>

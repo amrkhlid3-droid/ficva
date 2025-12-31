@@ -8,6 +8,45 @@ import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectC
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 
+type NodeMode = "straight" | "mirrored" | "detached"
+
+/**
+ * Custom interface for Path Commands stored in Fabric.
+ * Fabric stores path data as arrays [command, ...args].
+ * We attach 'nodeMode' to these array objects.
+ */
+interface PathCommand extends Array<string | number> {
+  nodeMode?: NodeMode
+  // Standard path command indices:
+  // M x y -> [0]: 'M', [1]: x, [2]: y
+  // L x y -> [0]: 'L', [1]: x, [2]: y
+  // C x1 y1 x2 y2 x y -> [0]: 'C', [1]: x1, [2]: y1, [3]: x2, [4]: y2, [5]: x, [6]: y
+  // Z -> [0]: 'Z'
+}
+
+/**
+ * Custom interface for Control Points (Anchors/Handles).
+ */
+interface ControlPoint extends Circle {
+  line?: Line
+  lineToHandle?: Line
+  handle?: ControlPoint
+  lineFromAnchor?: boolean
+  data?: {
+    type: "anchor" | "handle_in" | "handle_out"
+    pathCmd: PathCommand
+    index: number
+    nodeMode?: NodeMode
+  }
+}
+
+interface EditablePath extends Path {
+  _ghostPath?: Path
+  _originalStroke?: string | FabricObject["stroke"]
+  _originalStrokeWidth?: number
+  id?: string
+}
+
 export default function FabricCanvas() {
   const canvasEl = useRef<HTMLCanvasElement>(null)
 
@@ -240,7 +279,7 @@ export default function FabricCanvas() {
   // Pen Tool Refs
   const activePathObjectRef = useRef<FabricObject | null>(null)
 
-  // Point structure: { x, y } is the anchor.
+  // Point structure: { x: y } is the anchor.
   // cp1 (in-handle) and cp2 (out-handle) are absolute coordinates.
   const pathPointsRef = useRef<
     {
@@ -248,6 +287,7 @@ export default function FabricCanvas() {
       y: number
       cp1: { x: number; y: number }
       cp2: { x: number; y: number }
+      nodeMode?: NodeMode
     }[]
   >([])
 
@@ -340,6 +380,7 @@ export default function FabricCanvas() {
           y: pointer.y,
           cp1: { x: pointer.x, y: pointer.y },
           cp2: { x: pointer.x, y: pointer.y },
+          nodeMode: "straight", // Click = Straight
         })
         // Ghost Point (for preview)
         points.push({
@@ -347,6 +388,7 @@ export default function FabricCanvas() {
           y: pointer.y,
           cp1: { x: pointer.x, y: pointer.y },
           cp2: { x: pointer.x, y: pointer.y },
+          nodeMode: "straight",
         })
       } else {
         // Real Point (replace ghost)
@@ -394,6 +436,11 @@ export default function FabricCanvas() {
         anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
         // cp1 (incoming) is opposite
         anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
+
+        // If dragging, it's a curve -> mirrored by default
+        // We need to type cast or extend point structure to include nodeMode
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(anchor as any).nodeMode = "mirrored"
       } else {
         // HOVERING: Update the Ghost Point (last one) to follow mouse
         // Just move anchor, keep handles zero-length (Line behavior by default)
@@ -437,14 +484,28 @@ export default function FabricCanvas() {
         const { penToolConfig } = useEditorStore.getState()
 
         const commands = points.map((p, index) => {
-          if (index === 0) return `M ${p.x} ${p.y}`
+          if (index === 0) {
+            const cmd = ["M", p.x, p.y] as PathCommand
+            if (p.nodeMode) cmd.nodeMode = p.nodeMode
+            return cmd
+          }
           const prev = points[index - 1]!
-          return `C ${prev.cp2.x} ${prev.cp2.y} ${p.cp1.x} ${p.cp1.y} ${p.x} ${p.y}`
-        })
-        commands.push("Z")
-        const pathData = commands.join(" ")
+          const cmd = [
+            "C",
+            prev.cp2.x,
+            prev.cp2.y,
+            p.cp1.x,
+            p.cp1.y,
+            p.x,
+            p.y,
+          ] as PathCommand
 
-        const path = new Path(pathData, {
+          if (p.nodeMode) cmd.nodeMode = p.nodeMode
+          return cmd
+        })
+        commands.push(["Z"])
+
+        const path = new Path(commands as unknown as PathCommand[], {
           stroke: penToolConfig.stroke,
           strokeWidth: penToolConfig.strokeWidth,
           strokeDashArray: penToolConfig.strokeDashArray || undefined,
@@ -510,32 +571,36 @@ export default function FabricCanvas() {
     const canvas = useEditorStore.getState().canvas
     if (!canvas) return
 
+    const removeControlsVisuals = () => {
+      controlsRef.current.forEach((c) => canvas.remove(c))
+      controlsRef.current = []
+
+      if (editingPathRef.current) {
+        const pathObj = editingPathRef.current as EditablePath
+        const ghostPath = pathObj._ghostPath
+        if (ghostPath) canvas.remove(ghostPath)
+      }
+    }
+
     const clearControls = () => {
       // Notify Store
       useEditorStore.getState().setEditingPath(null)
 
-      controlsRef.current.forEach((c) => canvas.remove(c))
-      controlsRef.current = []
-      controlsRef.current.forEach((c) => canvas.remove(c))
-      controlsRef.current = []
+      removeControlsVisuals()
 
       // Restore selection globally
       canvas.selection = true
       canvas.forEachObject((o) => {
         // Don't enable ghost or controls (they are gone anyway), but good practice
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (!(o as any).isGhost && !(o as any).excludeFromExport) {
-          o.selectable = true
-          o.evented = true
+        const obj = o as EditablePath & ControlPoint
+        if (!obj.isGhost && !obj.excludeFromExport) {
+          obj.selectable = true
+          obj.evented = true
         }
       })
 
       if (editingPathRef.current) {
-        const oldPath = editingPathRef.current
-        // Remove ghost path if exists
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ghostPath = (oldPath as any)._ghostPath
-        if (ghostPath) canvas.remove(ghostPath)
+        const oldPath = editingPathRef.current as EditablePath
 
         // Save the visual position of the first command before recreation
         const firstCmd = oldPath.path[0]
@@ -544,27 +609,22 @@ export default function FabricCanvas() {
         // Get world position of first point BEFORE recreation
         const oldMatrix = oldPath.calcTransformMatrix()
         const oldOffset = oldPath.pathOffset || { x: 0, y: 0 }
-        const oldLocalX = firstCmd[1]! - oldOffset.x
-        const oldLocalY = firstCmd[2]! - oldOffset.y
+        const oldLocalX = (firstCmd[1] as number) - oldOffset.x
+        const oldLocalY = (firstCmd[2] as number) - oldOffset.y
         const oldWorldPt = new Point(oldLocalX, oldLocalY).transform(oldMatrix)
 
         // Create a new array reference to force Fabric.js to recalculate dimensions
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const newPathData = oldPath.path.map((cmd: any) => [...cmd]) as any
+        const newPathData = oldPath.path.map((cmd) => [...cmd]) as PathCommand[]
 
         // Recreate the Path object entirely to force proper dimension calculation
         const newPath = new Path(newPathData, {
           fill: oldPath.fill,
           // CRITICAL: Restore original stroke if we were highlighting it
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          stroke: (oldPath as any)._originalStroke || oldPath.stroke,
+          stroke: oldPath._originalStroke || oldPath.stroke,
 
-          strokeWidth:
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (oldPath as any)._originalStrokeWidth || oldPath.strokeWidth,
+          strokeWidth: oldPath._originalStrokeWidth || oldPath.strokeWidth,
           objectCaching: true,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          id: (oldPath as any).id,
+          id: oldPath.id,
           scaleX: oldPath.scaleX,
           scaleY: oldPath.scaleY,
           angle: oldPath.angle,
@@ -628,19 +688,15 @@ export default function FabricCanvas() {
 
     // Refresh all control line positions based on current anchor/handle positions
     const refreshControlLines = () => {
-      const controls = controlsRef.current
+      const controls = controlsRef.current as ControlPoint[]
 
       // Find all anchors and handles, build a map by command index
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const anchorsByIndex: Map<number, any> = new Map()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handleInByIndex: Map<number, any> = new Map()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handleOutByIndex: Map<number, any> = new Map()
+      const anchorsByIndex: Map<number, ControlPoint> = new Map()
+      const handleInByIndex: Map<number, ControlPoint> = new Map()
+      const handleOutByIndex: Map<number, ControlPoint> = new Map()
 
       controls.forEach((ctrl) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const data = (ctrl as any).data
+        const data = ctrl.data
         if (!data) return
 
         if (data.type === "anchor") {
@@ -652,21 +708,9 @@ export default function FabricCanvas() {
         }
       })
 
-      // Now update lines: For each C command at index i:
-      // - l1: from anchor[i-1] to handle_in[i]
-      // - l2: from anchor[i] to handle_out[i]
+      // Actual simpler approach: find controls with .line property and update
       controls.forEach((ctrl) => {
-        // Lines don't have data, but we need to identify which line is which
-        // For now, check if it's a Line type and update based on nearby controls
-        if (ctrl.type === "line") {
-          // We'll reconstruct lines differently - see below
-        }
-      })
-
-      // Actually, simpler approach: find controls with .line property and update
-      controls.forEach((ctrl) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = ctrl as any
+        const c = ctrl
         if (c.data?.type === "handle_in" && c.line) {
           // l1 goes from previous anchor to this handle
           const cmdIndex = c.data.index
@@ -701,10 +745,10 @@ export default function FabricCanvas() {
     const createControl = (
       x: number,
       y: number,
-      type: string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pathCmd: any,
-      index: number
+      type: "anchor" | "handle_in" | "handle_out",
+      pathCmd: PathCommand,
+      index: number,
+      nodeMode: NodeMode
     ) => {
       const circle = new Circle({
         left: x,
@@ -718,12 +762,12 @@ export default function FabricCanvas() {
         hasControls: false,
         hasBorders: false,
         selectable: true,
+        padding: type === "anchor" ? 10 : 5, // Increase hit area
         // Custom props
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: { type, pathCmd, index } as any,
+        data: { type, pathCmd, index, nodeMode },
         excludeFromExport: true, // CRITICAL: Do not save controls to JSON
       })
-      return circle
+      return circle as ControlPoint
     }
 
     const createLine = (
@@ -743,7 +787,13 @@ export default function FabricCanvas() {
     }
 
     const enterEditMode = (pathObj: Path) => {
-      if (editingPathRef.current) clearControls()
+      if (editingPathRef.current) {
+        if (editingPathRef.current !== pathObj) {
+          clearControls() // Proper exit of previous path
+        } else {
+          removeControlsVisuals() // Just refresh styling for same path
+        }
+      }
 
       // Notify Store for UI updates
       useEditorStore.getState().setEditingPath(pathObj)
@@ -763,8 +813,7 @@ export default function FabricCanvas() {
       })
 
       // 2. Create Ghost Path for interaction (Stroke Only)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ghostPath = new Path(pathObj.path as any, {
+      const ghostPath = new Path(pathObj.path as unknown as string, {
         objectCaching: false,
         fill: "", // Transparent fill prevents mouse detection on fill area
         // CRITICAL: Must not be fully transparent for hit detection to work!
@@ -866,20 +915,29 @@ export default function FabricCanvas() {
         return new Point(localX, localY).transform(matrix)
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pathCommands = pathObj.path as any[] // [['M', x, y], ['C', ...], ['Z']]
+      const pathCommands = pathObj.path as PathCommand[] // [['M', x, y], ['C', ...], ['Z']]
 
       pathCommands.forEach((cmd, i) => {
+        // INFER MODE if missing
+        if (!cmd.nodeMode) {
+          if (cmd[0] === "L" || cmd[0] === "M") cmd.nodeMode = "straight"
+          else cmd.nodeMode = "mirrored"
+        }
+
+        const nodeMode: NodeMode = cmd.nodeMode || "straight"
+
         if (cmd[0] === "M") {
           const p = transformPoint(cmd[1], cmd[2])
-          const anchor = createControl(p.x, p.y, "anchor", cmd, i)
+          const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
+          canvas.bringObjectToFront(anchor) // Ensure top z-index
           controlsRef.current.push(anchor)
         }
         if (cmd[0] === "L") {
           const p = transformPoint(cmd[1], cmd[2])
-          const anchor = createControl(p.x, p.y, "anchor", cmd, i)
+          const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
+          canvas.bringObjectToFront(anchor) // Ensure top z-index
           controlsRef.current.push(anchor)
         }
         if (cmd[0] === "C") {
@@ -888,65 +946,65 @@ export default function FabricCanvas() {
           const p2 = transformPoint(cmd[3], cmd[4]) // Control 2
           const p = transformPoint(cmd[5], cmd[6]) // Anchor
 
-          const anchor = createControl(p.x, p.y, "anchor", cmd, i)
-          const handle1 = createControl(p1.x, p1.y, "handle_in", cmd, i) // Logic mapping might need adjustment
-          const handle2 = createControl(p2.x, p2.y, "handle_out", cmd, i)
+          const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
+          canvas.add(anchor)
+          canvas.bringObjectToFront(anchor) // Ensure top z-index
+          controlsRef.current.push(anchor)
 
-          // Lines
-          // handle1 is for 'start' of curve? No, C command:
-          // (current point) -> control1 -> control2 -> target(x,y)
-          // Wait, standard Bezier:
-          // P_prev is start. P_prev connects to x1,y1 (Handle Out of Prev).
-          // P_target connect to x2,y2 (Handle In of Target).
-          // BUT in SVG 'C' command, BOTH handles are specified in the 'C' command itself.
+          // ONLY CREATE HANDLES IF NOT STRAIGHT
+          if (nodeMode !== "straight") {
+            const handle1 = createControl(
+              p1.x,
+              p1.y,
+              "handle_in",
+              cmd,
+              i,
+              nodeMode
+            )
+            const handle2 = createControl(
+              p2.x,
+              p2.y,
+              "handle_out",
+              cmd,
+              i,
+              nodeMode
+            )
 
-          // Visual connection:
-          // Line from P_prev (Anchor) to x1,y1 (Handle 1)
-          // Line from P_target (Anchor) to x2,y2 (Handle 2)
+            // Lines
+            // ... [Logic for finding prev anchor for l1] ...
+            const prevCmd = pathCommands[i - 1]
+            let prevX = 0,
+              prevY = 0
+            if (prevCmd) {
+              const len = prevCmd.length
+              prevX = prevCmd[len - 2]
+              prevY = prevCmd[len - 1]
+            }
+            const prevP = transformPoint(prevX, prevY)
 
-          // We need previous anchor position to draw line to Handle 1.
-          const prevCmd = pathCommands[i - 1]
-          // M x y or L x y or C ... x y
-          let prevX = 0,
-            prevY = 0
-          if (prevCmd) {
-            const len = prevCmd.length
-            // Last 2 args are always x, y
-            prevX = prevCmd[len - 2]
-            prevY = prevCmd[len - 1]
+            const l1 = createLine(prevP, p1)
+            const l2 = createLine(p, p2)
+
+            canvas.add(l1, l2, handle1, handle2)
+            controlsRef.current.push(l1, l2, handle1, handle2)
+
+            // Associate lines
+            const h1 = handle1 as ControlPoint
+            const h2 = handle2 as ControlPoint
+            const anc = anchor as ControlPoint
+
+            h1.line = l1
+            h2.line = l2
+            anc.lineToHandle = l2
+            anc.handle = h2
+            h1.lineFromAnchor = true
           }
-          const prevP = transformPoint(prevX, prevY)
-
-          const l1 = createLine(prevP, p1)
-          const l2 = createLine(p, p2)
-
-          canvas.add(l1, l2, handle1, handle2, anchor)
-          controlsRef.current.push(l1, l2, handle1, handle2, anchor)
-
-          // Associate lines to handles for update when handle moves
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(handle1 as any).line = l1
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(handle2 as any).line = l2
-
-          // Associate l2 to this anchor (l2 goes FROM this anchor TO handle2)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(anchor as any).lineToHandle = l2
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(anchor as any).handle = handle2
-
-          // For l1: it connects FROM previous anchor TO handle1
-          // We need to find the previous anchor and associate l1 with it
-          // For simplicity, store l1 reference on handle1 with "lineFromPrevAnchor" flag
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(handle1 as any).lineFromAnchor = true // l1's x1,y1 endpoint comes from prev anchor
         }
       })
       canvas.requestRenderAll()
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleDblClick = (e: any) => {
+    const handleDblClick = (e: { target?: FabricObject }) => {
       if (activeTool !== "select") return
       if (e.target && e.target.type === "path") {
         // Prevent re-entry if already editing this path (or a replacement of it)
@@ -962,20 +1020,17 @@ export default function FabricCanvas() {
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleMouseDown = (e: any) => {
+    const handleMouseDown = (e: { target?: FabricObject }) => {
       // If clicking blank space, exit edit mode
       if (editingPathRef.current && !e.target) {
         clearControls()
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleObjectMoving = (e: any) => {
+    const handleObjectMoving = (e: { target: FabricObject }) => {
       if (!editingPathRef.current) return
-      const target = e.target
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = (target as any).data
+      const target = e.target as ControlPoint
+      const data = target.data
       if (!data) return
 
       // Inverse transform to get local coordinate
@@ -1001,15 +1056,181 @@ export default function FabricCanvas() {
         // C x1 y1 x2 y2 x y - handle_in is x1 y1
         cmd[1] = rawX
         cmd[2] = rawY
+
+        // Mirroring Logic:
+        // This handle (cmd[1], cmd[2]) is "Handle Out" of Prev Anchor.
+        // It should mirror with "Handle In" of Prev Anchor.
+        // Handle In of Prev Anchor is Command I-1's cp2 (prevCmd[3], prevCmd[4]).
+
+        const prevIndex = data.index - 1
+        if (prevIndex >= 0) {
+          const pathData = pathObj.path as PathCommand[]
+          const prevCmd = pathData[prevIndex]
+          if (
+            prevCmd &&
+            prevCmd.nodeMode === "mirrored" &&
+            prevCmd[0] === "C"
+          ) {
+            // Mirroring around Prev Anchor (prevCmd[5], prevCmd[6])
+            const px = prevCmd[5] as number
+            const py = prevCmd[6] as number
+            const dx = rawX - px
+            const dy = rawY - py
+            // Target: Handle In of Prev (prevCmd[3], prevCmd[4])
+            prevCmd[3] = px - dx
+            prevCmd[4] = py - dy
+          }
+        }
       } else if (data.type === "handle_out") {
         // C x1 y1 x2 y2 x y - handle_out is x2 y2
         cmd[3] = rawX
         cmd[4] = rawY
+
+        // Mirroring Logic:
+        // This handle (cmd[3], cmd[4]) is "Handle In" of Current Anchor.
+        // It should mirror with "Handle Out" of Current Anchor.
+        // Handle Out of Current Anchor is Command I+1's cp1 (nextCmd[1], nextCmd[2]).
+        // We check Current Anchor mode (cmd.nodeMode).
+        if (cmd.nodeMode === "mirrored") {
+          const nextIndex = data.index + 1
+          const pathData = pathObj.path as PathCommand[]
+          if (nextIndex < pathData.length) {
+            const nextCmd = pathData[nextIndex]
+            if (nextCmd && nextCmd[0] === "C") {
+              // Mirroring around Current Anchor (cmd[5], cmd[6])
+              const px = cmd[5] as number
+              const py = cmd[6] as number
+              const dx = rawX - px
+              const dy = rawY - py
+              // Target: Handle Out of Curr (nextCmd[1], nextCmd[2])
+              nextCmd[1] = px - dx
+              nextCmd[2] = py - dy
+            }
+          }
+        }
       }
 
       updatePath()
       refreshControlLines()
     }
+
+    // LISTENER FOR MODE CHANGE
+
+    const handleNodeModeChange = (e: {
+      target: FabricObject
+      mode: NodeMode
+    }) => {
+      if (!editingPathRef.current) return
+      const pathObj = editingPathRef.current
+      const pathData = pathObj.path as PathCommand[]
+
+      const target = e.target
+      const mode = e.mode as NodeMode
+      const controlTarget = target as ControlPoint
+      const data = controlTarget.data
+
+      if (!data || data.type !== "anchor") return
+
+      // Update mode in command data
+      const cmd = data.pathCmd
+      cmd.nodeMode = mode
+
+      // 1. STRAIGHT: Collapse handles
+      if (mode === "straight") {
+        // Collapse Handle In of this anchor (cmd[3], cmd[4]) -> anchor (cmd[5], cmd[6])
+        if (cmd[0] === "C") {
+          cmd[3] = cmd[5]
+          cmd[4] = cmd[6]
+        }
+        // Collapse Handle Out of this anchor (nextCmd[1], nextCmd[2]) -> anchor (cmd[5], cmd[6])
+        const nextCmd = pathData[data.index + 1]
+        if (nextCmd && nextCmd[0] === "C") {
+          nextCmd[1] = cmd[5]
+          nextCmd[2] = cmd[6]
+        }
+      }
+
+      // 2. MIRRORED: Expand handles if they were straight
+      else if (mode === "mirrored") {
+        // If coming from Straight (collapsed), we need to drag them out.
+        // How to determine direction?
+        // Simple heuristic: Tangent to lines. Or just horizontal/angular average.
+        // If not collapsed, force alignment.
+
+        const anchorX = cmd[5]
+        const anchorY = cmd[6]
+
+        // Handle In (cmd[3], cmd[4])
+        const hInX = cmd[3]
+        const hInY = cmd[4]
+        // Handle Out (nextCmd[1], nextCmd[2])
+        const nextCmd = pathData[data.index + 1]
+        const hOutX = nextCmd ? nextCmd[1] : anchorX
+        const hOutY = nextCmd ? nextCmd[2] : anchorY
+
+        const isCollapsedIn = hInX === anchorX && hInY === anchorY
+        const isCollapsedOut = hOutX === anchorX && hOutY === anchorY
+
+        if (isCollapsedIn && isCollapsedOut) {
+          // Creating new handles from scratch.
+          // Try to find a reasonable tangent.
+          // Vector from PrevAnchor to NextAnchor?
+          // PrevAnchor: prevCmd[5], prevCmd[6] (or start if index=0)
+          // NextAnchor: nextCmd[5], nextCmd[6]
+          // Default: Horizontal + 20px
+          cmd[3] = anchorX - 20
+          cmd[4] = anchorY
+          if (nextCmd) {
+            nextCmd[1] = anchorX + 20
+            nextCmd[2] = anchorY
+          }
+        } else {
+          // Already has some handles (maybe detached). Align them.
+          // Align Out based on In (Mirror In).
+          const dx = hInX - anchorX
+          const dy = hInY - anchorY
+          // If In is collapsed but Out isn't, use Out to set In.
+          if (
+            dx === 0 &&
+            dy === 0 &&
+            (hOutX !== anchorX || hOutY !== anchorY)
+          ) {
+            const dxOut = hOutX - anchorX
+            const dyOut = hOutY - anchorY
+            cmd[3] = anchorX - dxOut
+            cmd[4] = anchorY - dyOut
+          } else {
+            if (nextCmd) {
+              nextCmd[1] = anchorX - dx
+              nextCmd[2] = anchorY - dy
+            }
+          }
+        }
+      }
+      // 3. DETACHED: Do nothing (just allow independent movement)
+
+      updatePath()
+      // Re-enter edit mode to refresh control visibility (Straight handles disappear)
+      enterEditMode(pathObj)
+
+      // RESTORE SELECTION
+      // After enterEditMode, selection is cleared. We need to find the anchor at 'data.index' and re-select it.
+      const newControls = controlsRef.current
+      const newAnchor = newControls.find((c) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = (c as any).data
+        return d && d.type === "anchor" && d.index === data.index
+      })
+
+      if (newAnchor) {
+        canvas.setActiveObject(newAnchor)
+        // Trigger store update manually since we bypassed standard interaction
+        useEditorStore.getState().setSelectedObjects([newAnchor])
+        canvas.requestRenderAll()
+      }
+    }
+
+    canvas.on("node:mode:change", handleNodeModeChange)
 
     canvas.on("mouse:dblclick", handleDblClick)
     canvas.on("mouse:down", handleMouseDown)
