@@ -49,7 +49,13 @@ export class ModifyCanvasCommand implements Command {
     if (currentIndex === -1) return
 
     // Serialize canvas with custom props
-    const json = this.canvas.toObject(["id", "selectable", "name"])
+    const json = this.canvas.toObject([
+      "id",
+      "selectable",
+      "name",
+      "nodeModes", // Persist node modes (legacy)
+      "customPathData", // Persist node data (new architecture)
+    ])
 
     // CRITICAL: Fabric.js toObject() doesn't include width/height by default!
     // Manually add them to the JSON

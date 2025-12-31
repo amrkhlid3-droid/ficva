@@ -39,5 +39,8 @@ declare module "fabric" {
       side: "in" | "out"
       mode: "curve" | "line"
     }
+    "path:data:changed": {
+      target: FabricObject
+    }
   }
 }

@@ -7,6 +7,7 @@ import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
+import { ModifyPathCommand } from "@/lib/editor/history/commands/ModifyPathCommand"
 import type { NodeMode, CustomPathData } from "@/types/fabric"
 import { svgPathToNodes } from "@/lib/editor/pathConverter"
 import { nodesToSvgPath } from "@/lib/editor/pathUtils"
@@ -170,7 +171,8 @@ export default function FabricCanvas() {
           "selectable",
           "name",
           "backgroundColor",
-          "nodeModes", // Persist node modes
+          "nodeModes", // Persist node modes (legacy)
+          "customPathData", // Persist node data (new architecture)
         ])
         if (!json.backgroundColor) {
           json.backgroundColor = canvas.backgroundColor
@@ -598,6 +600,10 @@ export default function FabricCanvas() {
   const editingPathRef = useRef<Path | null>(null)
   const controlsRef = useRef<FabricObject[]>([])
   const clearControlsRef = useRef<(() => void) | null>(null)
+  // 用于历史记录：存储拖拽开始时的节点快照
+  const dragStartNodesRef = useRef<import("@/types/fabric").PathNode[] | null>(
+    null
+  )
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
@@ -668,6 +674,13 @@ export default function FabricCanvas() {
           selectable: true,
           evented: true,
         })
+
+        // CRITICAL: 复制 customPathData，避免重新进入编辑模式时重新解析导致节点重复
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((oldPath as any).customPathData) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(newPath as any).customPathData = (oldPath as any).customPathData
+        }
 
         // Get world position of first point AFTER recreation with left=0, top=0
         const newMatrix = newPath.calcTransformMatrix()
@@ -907,44 +920,79 @@ export default function FabricCanvas() {
       })
 
       // 2. Create Ghost Path for interaction (Stroke Only)
-      const ghostPath = new Path(pathObj.path as unknown as string, {
-        objectCaching: false,
-        fill: "", // Transparent fill prevents mouse detection on fill area
-        // CRITICAL: Must not be fully transparent for hit detection to work!
-        stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING
-        strokeWidth: pathObj.strokeWidth || 1, // Match original width exactly
-        strokeUniform: pathObj.strokeUniform, // Copy uniform scaling
-        selectable: true, // Allow selecting to inspect data
-        evented: true, // This object captures events
-        perPixelTargetFind: true, // CRITICAL: Only stroke pixels trigger events
-        hoverCursor: "default", // CRITICAL: Don't show selection cursor
-
-        // Match transform to align perfectly
-        left: pathObj.left,
-        top: pathObj.top,
-        scaleX: pathObj.scaleX,
-        scaleY: pathObj.scaleY,
-        angle: pathObj.angle,
-        originX: pathObj.originX,
-        originY: pathObj.originY,
-        pathOffset: pathObj.pathOffset,
-
-        excludeFromExport: true, // Don't save
-
-        isGhost: true, // Mark as ghost to prevent double-click editing
-        // Lock movement to prevent accidental manipulation
-        lockMovementX: true,
-        lockMovementY: true,
-        lockRotation: true,
-        lockScalingX: true,
-        lockScalingY: true,
-        hasControls: false,
-        hasBorders: true, // Show border when selected to indicate selection
-
-        // Carry Data for Inspection
+      // 方案 B: 让幽灵路径自己计算 pathOffset，然后补偿位置差异
+      const ghostPath = new Path(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        customPathData: (pathObj as any).customPathData,
-      })
+        pathObj.path as any,
+        {
+          objectCaching: false,
+          fill: "", // Transparent fill prevents mouse detection on fill area
+          // CRITICAL: Must not be fully transparent for hit detection to work!
+          stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING
+          strokeWidth: pathObj.strokeWidth || 1, // Match original width exactly
+          strokeUniform: pathObj.strokeUniform, // Copy uniform scaling
+          selectable: true, // Allow selecting to inspect data
+          evented: true, // This object captures events
+          perPixelTargetFind: true, // CRITICAL: Only stroke pixels trigger events
+          hoverCursor: "default", // CRITICAL: Don't show selection cursor
+
+          // 只复制缩放/旋转，不复制位置和 pathOffset
+          scaleX: pathObj.scaleX,
+          scaleY: pathObj.scaleY,
+          angle: pathObj.angle,
+          skewX: pathObj.skewX,
+          skewY: pathObj.skewY,
+          originX: pathObj.originX,
+          originY: pathObj.originY,
+          // 不设置 left, top, pathOffset - 让 Fabric 自己计算
+
+          excludeFromExport: true, // Don't save
+
+          isGhost: true, // Mark as ghost to prevent double-click editing
+          // Lock movement to prevent accidental manipulation
+          lockMovementX: true,
+          lockMovementY: true,
+          lockRotation: true,
+          lockScalingX: true,
+          lockScalingY: true,
+          hasControls: false,
+          hasBorders: true, // Show border when selected to indicate selection
+
+          // Carry Data for Inspection
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          customPathData: (pathObj as any).customPathData,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any
+      )
+
+      // 计算位置补偿：对齐第一个点的世界坐标
+      const firstCmd = pathObj.path[0]
+      if (firstCmd && firstCmd.length >= 3) {
+        // 原始路径第一个点的世界坐标
+        const oldMatrix = pathObj.calcTransformMatrix()
+        const oldOffset = pathObj.pathOffset || { x: 0, y: 0 }
+        const oldLocalX = (firstCmd[1] as number) - oldOffset.x
+        const oldLocalY = (firstCmd[2] as number) - oldOffset.y
+        const oldWorldPt = new Point(oldLocalX, oldLocalY).transform(oldMatrix)
+
+        // 幽灵路径第一个点的世界坐标
+        const ghostMatrix = ghostPath.calcTransformMatrix()
+        const ghostOffset = ghostPath.pathOffset || { x: 0, y: 0 }
+        const ghostLocalX = (firstCmd[1] as number) - ghostOffset.x
+        const ghostLocalY = (firstCmd[2] as number) - ghostOffset.y
+        const ghostWorldPt = new Point(ghostLocalX, ghostLocalY).transform(
+          ghostMatrix
+        )
+
+        // 补偿差异
+        const dx = oldWorldPt.x - ghostWorldPt.x
+        const dy = oldWorldPt.y - ghostWorldPt.y
+        ghostPath.set({
+          left: (ghostPath.left || 0) + dx,
+          top: (ghostPath.top || 0) + dy,
+        })
+        ghostPath.setCoords()
+      }
 
       // Add Click Listener for Debugging
       ghostPath.on("mousedown", () => {
@@ -1308,6 +1356,23 @@ export default function FabricCanvas() {
       // If clicking blank space, exit edit mode
       if (editingPathRef.current && !e.target) {
         clearControls()
+        return
+      }
+
+      // 如果在编辑模式下点击控制点，保存当前节点状态用于历史记录
+      if (editingPathRef.current && e.target) {
+        const target = e.target as ControlPoint
+        if (target.data) {
+          const pathObj = editingPathRef.current as EditablePath & {
+            customPathData?: CustomPathData
+          }
+          if (pathObj.customPathData) {
+            // 深拷贝当前节点状态作为拖拽前快照
+            dragStartNodesRef.current = JSON.parse(
+              JSON.stringify(pathObj.customPathData.nodes)
+            )
+          }
+        }
       }
     }
 
@@ -1348,12 +1413,47 @@ export default function FabricCanvas() {
 
       // 处理锚点拖动
       if (data.type === "anchor") {
+        const node = nodes[nodeIndex]
+
         // 直接更新节点位置
-        nodes[nodeIndex].anchor.x = rawX
-        nodes[nodeIndex].anchor.y = rawY
+        node.anchor.x = rawX
+        node.anchor.y = rawY
 
         // 重新生成 SVG Path
         regeneratePath()
+
+        // 更新关联的控制柄位置（如果是 mirrored 模式）
+        if (node.mode === "mirrored") {
+          // Helper to convert Path Coordinate to Canvas Coordinate
+          const transformPoint = (x: number, y: number) => {
+            const off = pathObj.pathOffset || { x: 0, y: 0 }
+            const localX = x - off.x
+            const localY = y - off.y
+            return new Point(localX, localY).transform(matrix)
+          }
+
+          // 找到关联的控制柄并更新位置
+          const controls = controlsRef.current as ControlPoint[]
+          controls.forEach((ctrl) => {
+            if (ctrl.data?.nodeIndex !== nodeIndex) return
+
+            if (ctrl.data.type === "handle_in") {
+              const newPos = transformPoint(
+                node.anchor.x + node.handleIn.x,
+                node.anchor.y + node.handleIn.y
+              )
+              ctrl.set({ left: newPos.x, top: newPos.y })
+              ctrl.setCoords()
+            } else if (ctrl.data.type === "handle_out") {
+              const newPos = transformPoint(
+                node.anchor.x + node.handleOut.x,
+                node.anchor.y + node.handleOut.y
+              )
+              ctrl.set({ left: newPos.x, top: newPos.y })
+              ctrl.setCoords()
+            }
+          })
+        }
 
         // 刷新控件连线
         refreshControlLines()
@@ -1447,42 +1547,71 @@ export default function FabricCanvas() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const oldGhost = (pathObj as any)._ghostPath as Path
 
-      // Recreate ghost path synchronously using new Path()
-      // This matches EXACTLY how the ghost path is created in enterEditMode
-      const newGhost = new Path(pathObj.path as unknown as PathCommand[], {
-        objectCaching: false,
-        fill: "", // No fill
-        stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING (Step 27 request)
-        strokeWidth: pathObj.strokeWidth || 1,
-        strokeUniform: pathObj.strokeUniform,
-        selectable: true,
-        evented: true,
-        perPixelTargetFind: true,
-        hoverCursor: "default",
+      // 方案 B: 让新路径自己计算 pathOffset，然后补偿位置差异
+      // 1. 先创建幽灵路径，让 Fabric 自动计算新的 pathOffset
+      const newGhost = new Path(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pathObj.path as any,
+        {
+          objectCaching: false,
+          fill: "", // No fill
+          stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING (Step 27 request)
+          strokeWidth: pathObj.strokeWidth || 1,
+          strokeUniform: pathObj.strokeUniform,
+          selectable: true,
+          evented: true,
+          perPixelTargetFind: true,
+          hoverCursor: "default",
 
-        excludeFromExport: true,
-        // @ts-expect-error -- Ghost property missing in types
-        isGhost: true,
-        lockMovementX: true,
-        lockMovementY: true,
-        lockRotation: true,
-        lockScalingX: true,
-        lockScalingY: true,
-        hasControls: false,
-        hasBorders: true,
+          excludeFromExport: true,
+          isGhost: true,
+          lockMovementX: true,
+          lockMovementY: true,
+          lockRotation: true,
+          lockScalingX: true,
+          lockScalingY: true,
+          hasControls: false,
+          hasBorders: true,
 
-        // Copy transform properties explicitly (Sync with enterEditMode)
-        left: pathObj.left,
-        top: pathObj.top,
-        scaleX: pathObj.scaleX,
-        scaleY: pathObj.scaleY,
-        angle: pathObj.angle,
-        skewX: pathObj.skewX,
-        skewY: pathObj.skewY,
-        originX: pathObj.originX,
-        originY: pathObj.originY,
-        pathOffset: pathObj.pathOffset,
-      })
+          // 只复制缩放/旋转/倾斜，不复制位置和 pathOffset
+          scaleX: pathObj.scaleX,
+          scaleY: pathObj.scaleY,
+          angle: pathObj.angle,
+          skewX: pathObj.skewX,
+          skewY: pathObj.skewY,
+          originX: pathObj.originX,
+          originY: pathObj.originY,
+          // 不设置 left, top, pathOffset - 让 Fabric 自己计算
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any
+      )
+
+      // 2. 计算位置补偿：对齐第一个点的世界坐标
+      const firstCmd = pathObj.path[0]
+      if (firstCmd && firstCmd.length >= 3) {
+        // 原始路径第一个点的世界坐标
+        const oldMatrix = pathObj.calcTransformMatrix()
+        const oldOffset = pathObj.pathOffset || { x: 0, y: 0 }
+        const oldLocalX = (firstCmd[1] as number) - oldOffset.x
+        const oldLocalY = (firstCmd[2] as number) - oldOffset.y
+        const oldWorldPt = new Point(oldLocalX, oldLocalY).transform(oldMatrix)
+
+        // 新幽灵路径第一个点的世界坐标
+        const newMatrix = newGhost.calcTransformMatrix()
+        const newOffset = newGhost.pathOffset || { x: 0, y: 0 }
+        const newLocalX = (firstCmd[1] as number) - newOffset.x
+        const newLocalY = (firstCmd[2] as number) - newOffset.y
+        const newWorldPt = new Point(newLocalX, newLocalY).transform(newMatrix)
+
+        // 补偿差异
+        const dx = oldWorldPt.x - newWorldPt.x
+        const dy = oldWorldPt.y - newWorldPt.y
+        newGhost.set({
+          left: (newGhost.left || 0) + dx,
+          top: (newGhost.top || 0) + dy,
+        })
+        newGhost.setCoords()
+      }
 
       // Attach custom data
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1511,8 +1640,8 @@ export default function FabricCanvas() {
       // Ensure specific layering if possible
       const pathIndex = canvas.getObjects().indexOf(pathObj)
       if (pathIndex > -1 && typeof canvas.moveObjectTo === "function") {
-        // @ts-expect-error - Check if method exists
-        canvas.moveObjectTo(newGhost, pathIndex + 1)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(canvas as any).moveObjectTo(newGhost, pathIndex + 1)
       } else {
         // Fallback: Just ensure controls are on top
         // controlsRef.current.forEach(c => canvas.bringObjectToFront(c))
@@ -1540,6 +1669,34 @@ export default function FabricCanvas() {
       // Trigger recreation on Mouse Up if we are editing
       if (editingPathRef.current) {
         recreateGhostPath()
+
+        // 创建历史记录命令（如果节点有变化）
+        const pathObj = editingPathRef.current as EditablePath & {
+          customPathData?: CustomPathData
+        }
+        if (dragStartNodesRef.current && pathObj.customPathData) {
+          const oldNodes = dragStartNodesRef.current
+          const newNodes = pathObj.customPathData.nodes
+          const closed = pathObj.customPathData.closed
+
+          // 检查是否有实际变化
+          const hasChanged =
+            JSON.stringify(oldNodes) !== JSON.stringify(newNodes)
+
+          if (hasChanged) {
+            const { history } = useEditorStore.getState()
+            const command = new ModifyPathCommand(
+              editingPathRef.current,
+              oldNodes,
+              newNodes,
+              closed
+            )
+            history.push(command) // 只 push，不 execute（因为已经应用了）
+          }
+
+          // 清除快照
+          dragStartNodesRef.current = null
+        }
       }
     }
 
@@ -1745,6 +1902,9 @@ export default function FabricCanvas() {
 
       console.log(`[Node Mode] Switching node ${nodeIndex} to ${newMode}`)
 
+      // 保存修改前的节点状态（用于历史记录）
+      const oldNodes = JSON.parse(JSON.stringify(pathObj.customPathData.nodes))
+
       // Update Node Mode
       node.mode = newMode
 
@@ -1778,6 +1938,16 @@ export default function FabricCanvas() {
         node.handleIn = { x: 0, y: 0 }
         node.handleOut = { x: 0, y: 0 }
       }
+
+      // 创建历史记录命令
+      const { history } = useEditorStore.getState()
+      const command = new ModifyPathCommand(
+        editingPathRef.current,
+        oldNodes,
+        pathObj.customPathData.nodes,
+        pathObj.customPathData.closed
+      )
+      history.push(command) // 只 push，不 execute（因为已经应用了）
 
       // Regenerate & Refresh
       regeneratePath()
@@ -1836,10 +2006,22 @@ export default function FabricCanvas() {
       canvas.requestRenderAll()
     }
 
+    // 处理撤销/重做时的路径数据变更
+    const handlePathDataChanged = (e: { target?: FabricObject }) => {
+      if (!e.target || e.target.type !== "path") return
+
+      // 如果当前正在编辑这个路径，刷新控制点和幽灵路径
+      if (editingPathRef.current === e.target) {
+        // 重新进入编辑模式以刷新所有可视化元素
+        enterEditMode(e.target as Path)
+      }
+    }
+
     canvas.on("node:mode:change", handleNodeModeChange)
     canvas.on("selection:created", handleSelection)
     canvas.on("selection:updated", handleSelection)
     canvas.on("selection:cleared", handleSelection)
+    canvas.on("path:data:changed", handlePathDataChanged)
 
     canvas.on("mouse:dblclick", handleDblClick)
     canvas.on("mouse:down", handleMouseDown)
@@ -1855,6 +2037,7 @@ export default function FabricCanvas() {
       canvas.off("selection:created", handleSelection)
       canvas.off("selection:updated", handleSelection)
       canvas.off("selection:cleared", handleSelection)
+      canvas.off("path:data:changed", handlePathDataChanged)
 
       clearControls()
     }

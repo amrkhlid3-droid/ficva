@@ -347,7 +347,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         // Serialize canvas
         // We need to be careful with JSON export.
         // fabric.Canvas#toJSON or toObject
-        const json = canvas.toObject(["id", "selectable", "name"]) // Include custom props
+        const json = canvas.toObject([
+          "id",
+          "selectable",
+          "name",
+          "nodeModes", // Persist node modes (legacy)
+          "customPathData", // Persist node data (new architecture)
+        ])
 
         // CRITICAL: Fabric.js toObject() doesn't include width/height by default!
         json.width = canvas.width
