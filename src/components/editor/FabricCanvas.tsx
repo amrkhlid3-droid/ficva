@@ -479,6 +479,19 @@ export default function FabricCanvas() {
       const points = pathPointsRef.current
       points.pop() // Remove ghost point
 
+      // Remove duplicate points caused by double-click (2 mousedowns)
+      while (points.length > 1) {
+        const last = points[points.length - 1]!
+        const prev = points[points.length - 2]!
+        const dist = Math.hypot(last.x - prev.x, last.y - prev.y)
+        // If points are virtually identical, remove the duplicate
+        if (dist < 0.5) {
+          points.pop()
+        } else {
+          break
+        }
+      }
+
       // Close path with Z
       if (points.length > 1) {
         const { penToolConfig } = useEditorStore.getState()
