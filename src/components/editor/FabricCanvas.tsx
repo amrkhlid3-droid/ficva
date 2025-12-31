@@ -391,6 +391,7 @@ export default function FabricCanvas() {
           y: pointer.y,
           cp1: { x: pointer.x, y: pointer.y }, // Will adjust below if dragging
           cp2: { x: pointer.x, y: pointer.y },
+          nodeMode: "straight", // Explicitly default to straight
         }
         // New Ghost
         points.push({
@@ -398,6 +399,7 @@ export default function FabricCanvas() {
           y: pointer.y,
           cp1: { x: pointer.x, y: pointer.y },
           cp2: { x: pointer.x, y: pointer.y },
+          nodeMode: "straight", // Default next point to straight
         })
       }
 
@@ -431,9 +433,7 @@ export default function FabricCanvas() {
         anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
 
         // If dragging, it's a curve -> mirrored by default
-        // We need to type cast or extend point structure to include nodeMode
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(anchor as any).nodeMode = "mirrored"
+        anchor.nodeMode = "mirrored"
       } else {
         // HOVERING: Update the Ghost Point (last one) to follow mouse
         // Just move anchor, keep handles zero-length (Line behavior by default)
@@ -443,6 +443,7 @@ export default function FabricCanvas() {
           y: pointer.y,
           cp1: { x: pointer.x, y: pointer.y },
           cp2: { x: pointer.x, y: pointer.y },
+          nodeMode: "straight",
         }
       }
 
@@ -512,6 +513,15 @@ export default function FabricCanvas() {
           originX: "left",
           originY: "top",
           id: crypto.randomUUID(),
+        })
+
+        // CRITICAL: Fabric re-creates path data arrays, stripping custom properties.
+        // We must re-attach nodeMode to the final path object's data.
+        const finalPathData = path.path as PathCommand[]
+        finalPathData.forEach((cmd, i) => {
+          if (commands[i] && commands[i].nodeMode) {
+            cmd.nodeMode = commands[i].nodeMode
+          }
         })
 
         const command = new AddObjectCommand(canvas, path)
