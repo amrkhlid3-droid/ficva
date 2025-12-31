@@ -1029,6 +1029,8 @@ export default function FabricCanvas() {
       const pathCommands = pathObj.path as PathCommand[] // [['M', x, y], ['C', ...], ['Z']]
       const nodeModes = pathObj.nodeModes || []
 
+      /*
+      // ===  OLD SVG COMMAND LOOP (DISABLED) ===
       pathCommands.forEach((cmd, i) => {
         // USE EXPLICIT MODE if available, otherwise INFER
         if (nodeModes[i]) {
@@ -1185,9 +1187,10 @@ export default function FabricCanvas() {
           }
         }
       })
+      */
 
-      // Update source of truth
-      pathObj.nodeModes = nodeModes
+      // Update source of truth (nodeModes不再需要，但暂时保留兼容)
+      // pathObj.nodeModes = nodeModes
 
       // === NODE-BASED CONTROL CREATION (NEW) ===
       // 从 nodes 数组创建控件，替代上面的 SVG Command 遍历
