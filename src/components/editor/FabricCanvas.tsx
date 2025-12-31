@@ -1726,6 +1726,18 @@ export default function FabricCanvas() {
         canvas.requestRenderAll()
       }
     }
+    */
+
+    // === NEW: Simplified handleNodeModeChange (TODO) ===
+    const handleNodeModeChange = (e: {
+      target: FabricObject
+      mode: NodeMode
+    }) => {
+      console.warn(
+        "[handleNodeModeChange] Not yet implemented for node-based architecture"
+      )
+      // TODO: Implement node-based mode switching
+    }
 
     // HIGHLIGHT SELECTION
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
