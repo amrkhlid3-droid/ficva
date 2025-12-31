@@ -17,16 +17,8 @@ type NodeMode = "straight" | "mirrored" | "detached"
  */
 interface PathCommand extends Array<string | number> {
   nodeMode?: NodeMode
-  // Standard path command indices:
-  // M x y -> [0]: 'M', [1]: x, [2]: y
-  // L x y -> [0]: 'L', [1]: x, [2]: y
-  // C x1 y1 x2 y2 x y -> [0]: 'C', [1]: x1, [2]: y1, [3]: x2, [4]: y2, [5]: x, [6]: y
-  // Z -> [0]: 'Z'
 }
 
-/**
- * Custom interface for Control Points (Anchors/Handles).
- */
 interface ControlPoint extends Circle {
   line?: Line
   lineToHandle?: Line
@@ -45,6 +37,7 @@ interface EditablePath extends Path {
   _originalStroke?: string | FabricObject["stroke"]
   _originalStrokeWidth?: number
   id?: string
+  isGhost?: boolean
 }
 
 export default function FabricCanvas() {
@@ -505,7 +498,8 @@ export default function FabricCanvas() {
         })
         commands.push(["Z"])
 
-        const path = new Path(commands as unknown as PathCommand[], {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const path = new Path(commands as any, {
           stroke: penToolConfig.stroke,
           strokeWidth: penToolConfig.strokeWidth,
           strokeDashArray: penToolConfig.strokeDashArray || undefined,
@@ -617,7 +611,8 @@ export default function FabricCanvas() {
         const newPathData = oldPath.path.map((cmd) => [...cmd]) as PathCommand[]
 
         // Recreate the Path object entirely to force proper dimension calculation
-        const newPath = new Path(newPathData, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const newPath = new Path(newPathData as any, {
           fill: oldPath.fill,
           // CRITICAL: Restore original stroke if we were highlighting it
           stroke: oldPath._originalStroke || oldPath.stroke,
@@ -1157,16 +1152,16 @@ export default function FabricCanvas() {
         // Simple heuristic: Tangent to lines. Or just horizontal/angular average.
         // If not collapsed, force alignment.
 
-        const anchorX = cmd[5]
-        const anchorY = cmd[6]
+        const anchorX = cmd[5] as number
+        const anchorY = cmd[6] as number
 
         // Handle In (cmd[3], cmd[4])
-        const hInX = cmd[3]
-        const hInY = cmd[4]
+        const hInX = cmd[3] as number
+        const hInY = cmd[4] as number
         // Handle Out (nextCmd[1], nextCmd[2])
         const nextCmd = pathData[data.index + 1]
-        const hOutX = nextCmd ? nextCmd[1] : anchorX
-        const hOutY = nextCmd ? nextCmd[2] : anchorY
+        const hOutX = nextCmd ? (nextCmd[1] as number) : anchorX
+        const hOutY = nextCmd ? (nextCmd[2] as number) : anchorY
 
         const isCollapsedIn = hInX === anchorX && hInY === anchorY
         const isCollapsedOut = hOutX === anchorX && hOutY === anchorY
