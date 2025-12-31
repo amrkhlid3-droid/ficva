@@ -719,8 +719,6 @@ export default function FabricCanvas() {
         ghostPath.pathOffset = pathObj.pathOffset
         ghostPath.width = pathObj.width
         ghostPath.height = pathObj.height
-        ghostPath.left = pathObj.left
-        ghostPath.top = pathObj.top
 
         ghostPath.dirty = true
       }
@@ -832,6 +830,52 @@ export default function FabricCanvas() {
     }
 
     const enterEditMode = (pathObj: Path) => {
+      // 0. GENERATOR PATTERN: Normalize Path
+      // Force all segments to be C commands to support handles.
+      const rawCmds = pathObj.path as PathCommand[]
+      let normalized = false
+      const newCmds: PathCommand[] = []
+      let lx = 0,
+        ly = 0,
+        sx = 0,
+        sy = 0
+
+      if (rawCmds) {
+        rawCmds.forEach((cmd) => {
+          if (cmd[0] === "M") {
+            sx = cmd[1] as number
+            sy = cmd[2] as number
+            lx = sx
+            ly = sy
+            newCmds.push(cmd)
+          } else if (cmd[0] === "L") {
+            normalized = true
+            const x = cmd[1] as number
+            const y = cmd[2] as number
+            // L -> C (Straight, 0 handles)
+            newCmds.push(["C", lx, ly, x, y, x, y])
+            lx = x
+            ly = y
+          } else if (cmd[0] === "C") {
+            lx = cmd[5] as number
+            ly = cmd[6] as number
+            newCmds.push(cmd)
+          } else if (cmd[0] === "Z") {
+            // Ensure physical gap is closed with a C
+            if (Math.abs(lx - sx) > 0.1 || Math.abs(ly - sy) > 0.1) {
+              normalized = true
+              newCmds.push(["C", lx, ly, sx, sy, sx, sy])
+            }
+            newCmds.push(["Z"])
+          }
+        })
+
+        if (normalized) {
+          pathObj.set({ path: newCmds })
+          pathObj.setCoords()
+        }
+      }
+
       if (editingPathRef.current) {
         if (editingPathRef.current !== pathObj) {
           clearControls() // Proper exit of previous path
@@ -916,6 +960,7 @@ export default function FabricCanvas() {
 
       ghostPath.on("mousedown", () => {
         // Clicking line just ensures we don't accidentally select something else
+        console.log("Path Data:", JSON.parse(JSON.stringify(pathObj.path)))
         canvas.discardActiveObject()
         canvas.requestRenderAll()
       })
@@ -1027,9 +1072,33 @@ export default function FabricCanvas() {
           const p2 = transformPoint(cmd[3] as number, cmd[4] as number) // Control 2
           const p = transformPoint(cmd[5] as number, cmd[6] as number) // Anchor
 
-          const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
-          canvas.add(anchor)
-          controlsRef.current.push(anchor)
+          // Check if this is a closing segment that lands on Start Point (M)
+          // If so, we skip creating a DUPLICATE anchor because M (Index 0) already has one.
+          // This avoids the "double point" visual glitch.
+          let isClosingSegment = false
+          if (
+            pathCommands.length > 2 &&
+            pathCommands[pathCommands.length - 1][0] === "Z" &&
+            i === pathCommands.length - 2
+          ) {
+            const startCmd = pathCommands[0]
+            const startP = transformPoint(
+              startCmd[1] as number,
+              startCmd[2] as number
+            )
+            if (
+              Math.abs(p.x - startP.x) < 0.1 &&
+              Math.abs(p.y - startP.y) < 0.1
+            ) {
+              isClosingSegment = true
+            }
+          }
+
+          if (!isClosingSegment) {
+            const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
+            canvas.add(anchor)
+            controlsRef.current.push(anchor)
+          }
 
           // Lines
           // Logic for finding prev anchor for l1
@@ -1134,7 +1203,7 @@ export default function FabricCanvas() {
       const data = target.data
       if (!data) return
 
-      // Inverse transform to get local coordinate
+      // Inverse transform to get local coordinate (path space)
       const pathObj = editingPathRef.current
       const matrix = pathObj.calcTransformMatrix()
       const invertedMatrix = util.invertTransform(matrix)
@@ -1142,149 +1211,220 @@ export default function FabricCanvas() {
         invertedMatrix
       )
 
-      // Helper to convert Path Coordinate to Canvas Coordinate
-      const toWorld = (x: number, y: number) => {
-        const off = pathObj.pathOffset || { x: 0, y: 0 }
-        return new Point(x - off.x, y - off.y).transform(matrix)
-      }
-
-      // Convert local coordinates back to path coordinates by adding pathOffset
+      // Convert local coordinates back to path coordinates (raw data space)
       const offset = pathObj.pathOffset || { x: 0, y: 0 }
       const rawX = localPoint.x + offset.x
       const rawY = localPoint.y + offset.y
 
-      const cmd = data.pathCmd
+      const pathData = pathObj.path as PathCommand[]
+      const cmd = data.pathCmd // The command this node belongs to
+
+      // --- HELPER: Get Anchor Position ---
+      let anchorX = 0,
+        anchorY = 0
+      if (cmd[0] === "M") {
+        anchorX = cmd[1] as number
+        anchorY = cmd[2] as number
+      } else if (cmd[0] === "C") {
+        anchorX = cmd[5] as number
+        anchorY = cmd[6] as number
+      } else if (cmd[0] === "L") {
+        anchorX = cmd[1] as number
+        anchorY = cmd[2] as number
+      }
+
+      // --- MODE CHECK ---
+      const nodeMode = data.nodeMode || "straight"
 
       if (data.type === "anchor") {
-        // Calculate delta
-        const oldX = cmd[cmd.length - 2] as number
-        const oldY = cmd[cmd.length - 1] as number
-        const dx = rawX - oldX
-        const dy = rawY - oldY
+        const dx = rawX - anchorX
+        const dy = rawY - anchorY
 
-        // Update anchor position in path data
-        cmd[cmd.length - 2] = rawX
-        cmd[cmd.length - 1] = rawY
+        // 1. Update Anchor
+        if (cmd[0] === "M") {
+          cmd[1] = rawX
+          cmd[2] = rawY
+        } else if (cmd[0] === "C") {
+          cmd[5] = rawX
+          cmd[6] = rawY
+        } else if (cmd[0] === "L") {
+          // Fallback if L exists
+          cmd[1] = rawX
+          cmd[2] = rawY
+        }
 
-        // Update Handle In (CP2 of current command)
-        if (cmd[0] === "C") {
+        // 2. Move Handle In (if exists)
+        // For M, Handle In is in Closing Command
+        if (cmd[0] === "M") {
+          const lastIdx = pathData.length - 1
+          if (
+            pathData[lastIdx] &&
+            pathData[lastIdx][0] === "C" &&
+            pathData[lastIdx + 1]?.[0] === "Z" // Wait, Z is last? No, my structure is [..., C, Z] where C is closing segment.
+            // My previous code inserted C at lastIdx. Z was pushed?
+            // Actually, Z is strictly last. Closing C is pathData[last-1].
+            // Let's safe-check: find the C that closes to M.
+            // It should be the command before Z.
+          ) {
+            // Find the closing segment
+            const zIndex = pathData.findIndex((c) => c[0] === "Z")
+            if (zIndex > 0) {
+              const closingCmd = pathData[zIndex - 1]
+              if (
+                closingCmd &&
+                closingCmd[0] === "C" &&
+                Math.abs((closingCmd[5] as number) - (anchorX + dx)) < 1 // Check if it targets M
+              ) {
+                closingCmd[3] = (closingCmd[3] as number) + dx
+                closingCmd[4] = (closingCmd[4] as number) + dy
+                // Also update anchor of closing segment to match M
+                closingCmd[5] = rawX
+                closingCmd[6] = rawY
+              }
+            }
+          }
+        } else if (cmd[0] === "C") {
+          // Handle In is cmd[3], cmd[4]
           cmd[3] = (cmd[3] as number) + dx
           cmd[4] = (cmd[4] as number) + dy
         }
 
-        // Update Handle Out (CP1 of next command)
-        const pathData = pathObj.path as PathCommand[]
+        // 3. Move Handle Out (Next Cmd CP1)
         const nextCmd = pathData[data.index + 1]
         if (nextCmd && nextCmd[0] === "C") {
           nextCmd[1] = (nextCmd[1] as number) + dx
           nextCmd[2] = (nextCmd[2] as number) + dy
         }
 
-        // STRICT CONSTRAINT ENFORCEMENT: Straight Nodes
-        // Ensure handles remain EXACTLY at anchor position (eliminate floating point drift)
-        if (data.nodeMode === "straight") {
-          // 1. Handle In
+        // STRICT STRAIGH MODE Enforcement
+        if (nodeMode === "straight") {
+          // Force handles to anchor position
+          // Handle In
           if (cmd[0] === "C") {
             cmd[3] = rawX
             cmd[4] = rawY
+          } else if (cmd[0] === "M") {
+            // Sync closing Logic
+            const zIndex = pathData.findIndex((c) => c[0] === "Z")
+            if (zIndex > 0) {
+              const closingCmd = pathData[zIndex - 1]
+              if (closingCmd && closingCmd[0] === "C") {
+                closingCmd[3] = rawX
+                closingCmd[4] = rawY
+                closingCmd[5] = rawX
+                closingCmd[6] = rawY
+              }
+            }
           }
 
-          // 2. Handle Out
+          // Handle Out
           if (nextCmd && nextCmd[0] === "C") {
             nextCmd[1] = rawX
             nextCmd[2] = rawY
           }
         }
-      } else if (data.type === "handle_in") {
-        // C x1 y1 x2 y2 x y - handle_in is x1 y1
-        cmd[1] = rawX
-        cmd[2] = rawY
+      } else if (data.type === "handle_in" || data.type === "handle_out") {
+        if (nodeMode === "straight") {
+          // Should not happen if UI hides handles, but just in case
+          // Force back to anchor
+          target.left = toWorld(anchorX, anchorY).x
+          target.top = toWorld(anchorX, anchorY).y
+          return
+        }
 
-        // Mirroring Logic:
-        // This handle (cmd[1], cmd[2]) is "Handle Out" of Prev Anchor.
-        // It should mirror with "Handle In" of Prev Anchor.
-        // Handle In of Prev Anchor is Command I-1's cp2 (prevCmd[3], prevCmd[4]).
+        // Mirrored Mode Logic
+        // 1. Calculate vector from anchor to mouse
+        let vX = rawX - anchorX
+        let vY = rawY - anchorY
+        let len = Math.sqrt(vX * vX + vY * vY)
 
-        const prevIndex = data.index - 1
-        if (prevIndex >= 0) {
-          const pathData = pathObj.path as PathCommand[]
-          const prevCmd = pathData[prevIndex]
-          if (prevCmd && prevCmd[0] === "C") {
-            // Mirroring around Prev Anchor (prevCmd[5], prevCmd[6])
-            const px = prevCmd[5] as number
-            const py = prevCmd[6] as number
-            const dx = rawX - px
-            const dy = rawY - py
-
-            // New coords for mirrored handle (Handle In of Prev)
-            const newHx = px - dx
-            const newHy = py - dy
-
-            // Target: Handle In of Prev (prevCmd[3], prevCmd[4])
-            prevCmd[3] = newHx
-            prevCmd[4] = newHy
-
-            // VISUAL SYNC: Find the control for prevCmd's handle_out (which is CP2)
-            // Wait: CP2 of prevCmd is named "handle_out" in createControl (line 962)
-            // It has index = prevIndex
-            const mirroredControl = (
-              controlsRef.current as ControlPoint[]
-            ).find(
-              (c) => c.data?.type === "handle_out" && c.data.index === prevIndex
-            )
-
-            if (mirroredControl) {
-              const worldPt = toWorld(newHx, newHy)
-              mirroredControl.set({ left: worldPt.x, top: worldPt.y })
-              mirroredControl.setCoords()
-            }
+        // 2. Minimum Length Constraint (20px)
+        if (len < 20) {
+          if (len === 0) {
+            vX = 20
+            vY = 0
+            len = 20
+          } else {
+            const scale = 20 / len
+            vX *= scale
+            vY *= scale
+            len = 20
           }
         }
-      } else if (data.type === "handle_out") {
-        // C x1 y1 x2 y2 x y - handle_out is x2 y2
-        cmd[3] = rawX
-        cmd[4] = rawY
 
-        // Mirroring Logic:
-        // This handle (cmd[3], cmd[4]) is "Handle In" of Current Anchor.
-        // It should mirror with "Handle Out" of Current Anchor.
-        // Handle Out of Current Anchor is Command I+1's cp1 (nextCmd[1], nextCmd[2]).
-        // We check Current Anchor mode (cmd.nodeMode).
-        // if (cmd.nodeMode === "mirrored") { // REMOVED: Always mirror if handles exist
-        const nextIndex = data.index + 1
-        const pathData = pathObj.path as PathCommand[]
-        if (nextIndex < pathData.length) {
-          const nextCmd = pathData[nextIndex]
-          if (nextCmd && nextCmd[0] === "C") {
-            // Mirroring around Current Anchor (cmd[5], cmd[6])
-            const px = cmd[5] as number
-            const py = cmd[6] as number
-            const dx = rawX - px
-            const dy = rawY - py
+        // 3. Update Coordinates based on which handle is dragged
+        let newHandleInX, newHandleInY, newHandleOutX, newHandleOutY
 
-            // New coords for mirrored handle
-            const newHx = px - dx
-            const newHy = py - dy
+        if (data.type === "handle_in") {
+          // Dragging In -> Out is opposite
+          newHandleInX = anchorX + vX
+          newHandleInY = anchorY + vY
+          newHandleOutX = anchorX - vX
+          newHandleOutY = anchorY - vY
+        } else {
+          // Dragging Out -> In is opposite
+          newHandleOutX = anchorX + vX
+          newHandleOutY = anchorY + vY
+          newHandleInX = anchorX - vX
+          newHandleInY = anchorY - vY
+        }
 
-            // Target: Handle Out of Curr (nextCmd[1], nextCmd[2])
-            nextCmd[1] = newHx
-            nextCmd[2] = newHy
-
-            // VISUAL SYNC: Find the control for nextCmd's handle_in (which is CP1)
-            // CP1 of nextCmd is named "handle_in" in createControl (line 954)
-            // It has index = nextIndex
-            const mirroredControl = (
-              controlsRef.current as ControlPoint[]
-            ).find(
-              (c) => c.data?.type === "handle_in" && c.data.index === nextIndex
-            )
-
-            if (mirroredControl) {
-              const worldPt = toWorld(newHx, newHy)
-              mirroredControl.set({ left: worldPt.x, top: worldPt.y })
-              mirroredControl.setCoords()
+        // 4. Update Path Data
+        // Handle In (cmd.cp2 or Closing.cp2)
+        if (cmd[0] === "M") {
+          const zIndex = pathData.findIndex((c) => c[0] === "Z")
+          if (zIndex > 0) {
+            const closingCmd = pathData[zIndex - 1]
+            if (closingCmd && closingCmd[0] === "C") {
+              closingCmd[3] = newHandleInX
+              closingCmd[4] = newHandleInY
             }
           }
+        } else if (cmd[0] === "C") {
+          cmd[3] = newHandleInX
+          cmd[4] = newHandleInY
+        }
+
+        // Handle Out (nextCmd.cp1)
+        const nextCmd = pathData[data.index + 1]
+        if (nextCmd && nextCmd[0] === "C") {
+          nextCmd[1] = newHandleOutX
+          nextCmd[2] = newHandleOutY
+        }
+
+        // 5. Update UI Control positions (Visual Sync)
+        target.set({
+          left: toWorld(
+            data.type === "handle_in" ? newHandleInX : newHandleOutX,
+            data.type === "handle_in" ? newHandleInY : newHandleOutY
+          ).x,
+          top: toWorld(
+            data.type === "handle_in" ? newHandleInX : newHandleOutX,
+            data.type === "handle_in" ? newHandleInY : newHandleOutY
+          ).y,
+        })
+
+        // Find opposite control and update it
+        const oppositeType =
+          data.type === "handle_in" ? "handle_out" : "handle_in"
+        const oppositeControl = (controlsRef.current as ControlPoint[]).find(
+          (c) => c.data?.index === data.index && c.data?.type === oppositeType
+        )
+        if (oppositeControl) {
+          const opX = data.type === "handle_in" ? newHandleOutX : newHandleInX
+          const opY = data.type === "handle_in" ? newHandleOutY : newHandleInY // Wait logic error in vX/vY usage above?
+          // Correction:
+          // If Dragging IN: vX is vector Anchor->Mouse(In). IN = Anchor + v. OUT = Anchor - v.
+          // If Dragging OUT: vX is vector Anchor->Mouse(Out). OUT = Anchor + v. IN = Anchor - v.
+
+          // Above logic:
+          // If In: newIn = A+v.
+          // If Out: newOut = A+v.
+          // Correct.
+
+          const worldOp = toWorld(opX, opY)
+          oppositeControl.set({ left: worldOp.x, top: worldOp.y })
+          oppositeControl.setCoords()
         }
       }
 
@@ -1411,109 +1551,28 @@ export default function FabricCanvas() {
             // In exists, set Out to mirror In
             newHOutX = anchorX - dx
             newHOutY = anchorY - dy
-            newHInX = hInX
-            newHInY = hInY
           }
         }
 
-        // WRITE BACK TO DATA & PROMOTE L -> C
-
-        // 1. Current Command (cmd)
-        if (cmd[0] === "L") {
-          // Promote L -> C
-          let prevX = 0,
-            prevY = 0
-          if (data.index > 0) {
-            const prev = pathData[data.index - 1]
-            if (prev) {
-              prevX = prev[prev.length - 2] as number
-              prevY = prev[prev.length - 1] as number
-            }
-          } else {
-            prevX = anchorX
-            prevY = anchorY
-          }
-          cmd.splice(
-            0,
-            cmd.length,
-            "C",
-            prevX,
-            prevY,
-            newHInX,
-            newHInY,
-            anchorX,
-            anchorY
-          )
-        } else if (cmd[0] === "C") {
+        // WRITE BACK TO DATA
+        if (cmd[0] === "C") {
           cmd[3] = newHInX
           cmd[4] = newHInY
         } else if (cmd[0] === "M") {
           const lastIdx = pathData.length - 1
-          const closingCmd = pathData[lastIdx]
-
-          // Check for Z -> C Promotion (Start Point Mirroring)
-          if (closingCmd && closingCmd[0] === "Z") {
-            let prevX = 0,
-              prevY = 0
-            const prevCmd = pathData[lastIdx - 1]
-            if (prevCmd) {
-              prevX = prevCmd[prevCmd.length - 2] as number
-              prevY = prevCmd[prevCmd.length - 1] as number
+          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
+          if (isClosed) {
+            const closingCmd = pathData[lastIdx - 1]
+            if (closingCmd && closingCmd[0] === "C") {
+              closingCmd[3] = newHInX
+              closingCmd[4] = newHInY
             }
-            const newC: PathCommand = [
-              "C",
-              prevX,
-              prevY,
-              newHInX,
-              newHInY,
-              cmd[1] as number,
-              cmd[2] as number,
-            ]
-            pathData.splice(lastIdx, 0, newC)
-          } else if (closingCmd && closingCmd[0] === "C") {
-            closingCmd[3] = newHInX
-            closingCmd[4] = newHInY
           }
         }
 
-        // 2. Next Command - HANDLE OUT
-        if (nextCmd) {
-          if (nextCmd[0] === "L") {
-            // Promote L -> C
-            const nX = nextCmd[1] as number
-            const nY = nextCmd[2] as number
-            nextCmd.splice(
-              0,
-              nextCmd.length,
-              "C",
-              newHOutX,
-              newHOutY,
-              nX,
-              nY,
-              nX,
-              nY
-            )
-          } else if (nextCmd[0] === "C") {
-            nextCmd[1] = newHOutX
-            nextCmd[2] = newHOutY
-          } else if (nextCmd[0] === "Z") {
-            // Promote Z -> C (Last Point Mirroring)
-            const startCmd = pathData[0]
-            if (startCmd) {
-              const mX = startCmd[1] as number
-              const mY = startCmd[2] as number
-              const newC: PathCommand = [
-                "C",
-                newHOutX,
-                newHOutY,
-                mX,
-                mY,
-                mX,
-                mY,
-              ]
-              pathData.splice(data.index + 1, 0, newC)
-            }
-          }
+        if (nextCmd && nextCmd[0] === "C") {
+          nextCmd[1] = newHOutX
+          nextCmd[2] = newHOutY
         }
       }
 
