@@ -431,15 +431,31 @@ export default function FabricCanvas() {
         // DRAGGING OUT HANDLES from the second-to-last anchor (the one we just placed)
         const anchor = points[points.length - 2]!
         const start = dragStartPointRef.current
-        const dx = (pointer.x - start.x) * 0.5 // SENSITIVITY MULTIPLIER: 0.5 (Reduce handle length to half)
-        const dy = (pointer.y - start.y) * 0.5
-        // cp2 (outgoing) is in the direction of the drag
-        anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
-        // cp1 (incoming) is opposite
-        anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
 
-        // If dragging, it's a curve -> mirrored by default
-        anchor.nodeMode = "mirrored"
+        const rawDx = pointer.x - start.x
+        const rawDy = pointer.y - start.y
+        const dist = Math.hypot(rawDx, rawDy)
+
+        // DRAG THRESHOLD: 5px
+        // Only switch to curve if user intentionally drags
+        if (dist > 5) {
+          const dx = rawDx * 0.5 // SENSITIVITY MULTIPLIER: 0.5
+          const dy = rawDy * 0.5
+
+          // cp2 (outgoing) is in the direction of the drag
+          anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
+          // cp1 (incoming) is opposite
+          anchor.cp1 = { x: anchor.x - dx, y: anchor.y - dy }
+
+          // If dragging significant amount, it's a curve -> mirrored
+          anchor.nodeMode = "mirrored"
+        } else {
+          // Below threshold: Keep as Straight
+          anchor.nodeMode = "straight"
+          // Ensure handles are collapsed (in case we dragged out then back in)
+          anchor.cp1 = { x: anchor.x, y: anchor.y }
+          anchor.cp2 = { x: anchor.x, y: anchor.y }
+        }
       } else {
         // HOVERING: Update the Ghost Point (last one) to follow mouse
         // Just move anchor, keep handles zero-length (Line behavior by default)
