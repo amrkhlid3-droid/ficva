@@ -1082,20 +1082,23 @@ export default function FabricCanvas() {
             i === pathCommands.length - 2
           ) {
             const startCmd = pathCommands[0]
-            const startP = transformPoint(
-              startCmd[1] as number,
-              startCmd[2] as number
-            )
-            if (
-              Math.abs(p.x - startP.x) < 0.1 &&
-              Math.abs(p.y - startP.y) < 0.1
-            ) {
-              isClosingSegment = true
+            if (startCmd) {
+              const startP = transformPoint(
+                startCmd[1] as number,
+                startCmd[2] as number
+              )
+              if (
+                Math.abs(p.x - startP.x) < 0.1 &&
+                Math.abs(p.y - startP.y) < 0.1
+              ) {
+                isClosingSegment = true
+              }
             }
           }
 
+          let anchor: ControlPoint | undefined
           if (!isClosingSegment) {
-            const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
+            anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
             canvas.add(anchor)
             controlsRef.current.push(anchor)
           }
@@ -1153,9 +1156,11 @@ export default function FabricCanvas() {
             const h2 = handle2 as ControlPoint
             h2.line = l2
 
-            const anc = anchor as ControlPoint
-            anc.lineToHandle = l2
-            anc.handle = h2
+            if (anchor) {
+              const anc = anchor as ControlPoint
+              anc.lineToHandle = l2
+              anc.handle = h2
+            }
           }
         }
       })
@@ -1213,6 +1218,13 @@ export default function FabricCanvas() {
 
       // Convert local coordinates back to path coordinates (raw data space)
       const offset = pathObj.pathOffset || { x: 0, y: 0 }
+
+      // Helper to convert Path Coordinate to Canvas Coordinate
+      const toWorld = (x: number, y: number) => {
+        const off = pathObj.pathOffset || { x: 0, y: 0 }
+        return new Point(x - off.x, y - off.y).transform(matrix)
+      }
+
       const rawX = localPoint.x + offset.x
       const rawY = localPoint.y + offset.y
 
