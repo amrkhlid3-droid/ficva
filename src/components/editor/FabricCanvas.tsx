@@ -1439,7 +1439,47 @@ export default function FabricCanvas() {
       }
     }
 
+    // HIGHLIGHT SELECTION
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleSelection = (e: any) => {
+      // Only runs if we are in edit mode (controls exist)
+      if (!editingPathRef.current) return
+
+      const selected = e.selected || []
+      const deselected = e.deselected || []
+
+      // Reset deselected
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      deselected.forEach((obj: any) => {
+        const data = obj.data
+        if (!data) return
+        if (data.type === "anchor") {
+          obj.set("fill", "#0000ff") // Default Blue
+        } else if (data.type === "handle_in" || data.type === "handle_out") {
+          obj.set("fill", "#ffffff") // Default White
+        }
+      })
+
+      // Highlight selected
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      selected.forEach((obj: any) => {
+        const data = obj.data
+        if (!data) return
+        if (
+          data.type === "anchor" ||
+          data.type === "handle_in" ||
+          data.type === "handle_out"
+        ) {
+          obj.set("fill", "#ffff00") // Yellow
+        }
+      })
+      canvas.requestRenderAll()
+    }
+
     canvas.on("node:mode:change", handleNodeModeChange)
+    canvas.on("selection:created", handleSelection)
+    canvas.on("selection:updated", handleSelection)
+    canvas.on("selection:cleared", handleSelection)
 
     canvas.on("mouse:dblclick", handleDblClick)
     canvas.on("mouse:down", handleMouseDown)
@@ -1450,6 +1490,9 @@ export default function FabricCanvas() {
       canvas.off("mouse:down", handleMouseDown)
       canvas.off("object:moving", handleObjectMoving)
       canvas.off("node:mode:change", handleNodeModeChange)
+      canvas.off("selection:created", handleSelection)
+      canvas.off("selection:updated", handleSelection)
+      canvas.off("selection:cleared", handleSelection)
 
       clearControls()
     }
