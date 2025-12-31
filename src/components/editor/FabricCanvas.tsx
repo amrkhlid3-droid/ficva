@@ -993,53 +993,62 @@ export default function FabricCanvas() {
           canvas.add(anchor)
           controlsRef.current.push(anchor)
 
-          // ONLY CREATE HANDLES IF NOT STRAIGHT
-          if (nodeMode !== "straight") {
+          // Lines
+          // Logic for finding prev anchor for l1
+          const prevCmd = pathCommands[i - 1]
+          let prevX = 0,
+            prevY = 0
+          if (prevCmd) {
+            const len = prevCmd.length
+            prevX = prevCmd[len - 2] as number
+            prevY = prevCmd[len - 1] as number
+          }
+          const prevP = transformPoint(prevX, prevY)
+
+          // Decouple Handle Creation
+          const prevMode =
+            i > 0 && nodeModes[i - 1] ? nodeModes[i - 1] : "straight"
+          const currMode = nodeModes[i] || "straight"
+
+          // Create Handle 1 (CP1 - Handle Out of Prev)
+          if (prevMode === "mirrored") {
             const handle1 = createControl(
               p1.x,
               p1.y,
               "handle_in",
               cmd,
               i,
-              nodeMode
+              prevMode
             )
+            const l1 = createLine(prevP, p1)
+            canvas.add(l1, handle1)
+            controlsRef.current.push(l1, handle1)
+
+            const h1 = handle1 as ControlPoint
+            h1.line = l1
+            h1.lineFromAnchor = true
+          }
+
+          // Create Handle 2 (CP2 - Handle In of Curr)
+          if (currMode === "mirrored") {
             const handle2 = createControl(
               p2.x,
               p2.y,
               "handle_out",
               cmd,
               i,
-              nodeMode
+              currMode
             )
-
-            // Lines
-            // ... [Logic for finding prev anchor for l1] ...
-            const prevCmd = pathCommands[i - 1]
-            let prevX = 0,
-              prevY = 0
-            if (prevCmd) {
-              const len = prevCmd.length
-              prevX = prevCmd[len - 2] as number
-              prevY = prevCmd[len - 1] as number
-            }
-            const prevP = transformPoint(prevX, prevY)
-
-            const l1 = createLine(prevP, p1)
             const l2 = createLine(p, p2)
+            canvas.add(l2, handle2)
+            controlsRef.current.push(l2, handle2)
 
-            canvas.add(l1, l2, handle1, handle2)
-            controlsRef.current.push(l1, l2, handle1, handle2)
-
-            // Associate lines
-            const h1 = handle1 as ControlPoint
             const h2 = handle2 as ControlPoint
-            const anc = anchor as ControlPoint
-
-            h1.line = l1
             h2.line = l2
+
+            const anc = anchor as ControlPoint
             anc.lineToHandle = l2
             anc.handle = h2
-            h1.lineFromAnchor = true
           }
         }
       })
