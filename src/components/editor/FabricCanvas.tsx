@@ -1185,16 +1185,6 @@ export default function FabricCanvas() {
           if (cmd[0] === "C") {
             cmd[3] = rawX
             cmd[4] = rawY
-          } else if (cmd[0] === "M") {
-            const lastIdx = pathData.length - 1
-            const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
-            if (isClosed) {
-              const closingCmd = pathData[lastIdx - 1]
-              if (closingCmd && closingCmd[0] === "C") {
-                closingCmd[3] = rawX
-                closingCmd[4] = rawY
-              }
-            }
           }
 
           // 2. Handle Out
