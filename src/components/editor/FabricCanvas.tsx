@@ -7,13 +7,14 @@ import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
+import type { NodeMode } from "@/types/fabric" // Import if possible, or redefine
 
-type NodeMode = "straight" | "mirrored" | "detached"
+// Fallback if import fails (safe way)
+// type NodeMode = "straight" | "mirrored" | "detached"
 
 /**
  * Custom interface for Path Commands stored in Fabric.
- * Fabric stores path data as arrays [command, ...args].
- * We attach 'nodeMode' to these array objects.
+ * We attach 'nodeMode' to these array objects temporarily during editing.
  */
 interface PathCommand extends Array<string | number> {
   nodeMode?: NodeMode
@@ -172,6 +173,7 @@ export default function FabricCanvas() {
           "selectable",
           "name",
           "backgroundColor",
+          "nodeModes", // Persist node modes
         ])
         if (!json.backgroundColor) {
           json.backgroundColor = canvas.backgroundColor
@@ -338,6 +340,9 @@ export default function FabricCanvas() {
 
       const pathData = commands.join(" ")
 
+      // Explicitly store node modes
+      const nodeModes = points.map((p) => p.nodeMode || "straight")
+
       return new Path(pathData, {
         stroke: penToolConfig.stroke,
         strokeWidth: penToolConfig.strokeWidth,
@@ -350,7 +355,8 @@ export default function FabricCanvas() {
         evented: false,
         originX: "left",
         originY: "top",
-        id: crypto.randomUUID(), // Add ID to prevent syncLayers warnings
+        id: crypto.randomUUID(),
+        nodeModes, // Pass explicit modes
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any
     }
@@ -499,6 +505,8 @@ export default function FabricCanvas() {
         })
         commands.push(["Z"])
 
+        const nodeModes = points.map((p) => p.nodeMode || "straight")
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const path = new Path(commands as any, {
           stroke: penToolConfig.stroke,
@@ -513,16 +521,10 @@ export default function FabricCanvas() {
           originX: "left",
           originY: "top",
           id: crypto.randomUUID(),
+          nodeModes, // Persist explicit modes
         })
 
-        // CRITICAL: Fabric re-creates path data arrays, stripping custom properties.
-        // We must re-attach nodeMode to the final path object's data.
-        const finalPathData = path.path as PathCommand[]
-        finalPathData.forEach((cmd, i) => {
-          if (commands[i] && commands[i].nodeMode) {
-            cmd.nodeMode = commands[i].nodeMode
-          }
-        })
+        // No longer need to attach to path data manually, as we use nodeModes property.
 
         const command = new AddObjectCommand(canvas, path)
         useEditorStore.getState().history.execute(command)
@@ -921,10 +923,14 @@ export default function FabricCanvas() {
       }
 
       const pathCommands = pathObj.path as PathCommand[] // [['M', x, y], ['C', ...], ['Z']]
+      const nodeModes = pathObj.nodeModes || []
 
       pathCommands.forEach((cmd, i) => {
-        // INFER MODE if missing
-        if (!cmd.nodeMode) {
+        // USE EXPLICIT MODE if available, otherwise INFER
+        if (nodeModes[i]) {
+          cmd.nodeMode = nodeModes[i]
+        } else {
+          // INFER MODE
           if (cmd[0] === "C") {
             const anchorX = cmd[5] as number
             const anchorY = cmd[6] as number
@@ -937,10 +943,6 @@ export default function FabricCanvas() {
               const prev = pathCommands[i - 1]
               prevX = prev[prev.length - 2] as number
               prevY = prev[prev.length - 1] as number
-            } else {
-              // Usually C is not first, but if it is (Fabric quirk?), prev is Start
-              // If i=0, prevX=0?
-              // M is always first.
             }
 
             const cp1X = cmd[1] as number
@@ -960,6 +962,8 @@ export default function FabricCanvas() {
           } else {
             cmd.nodeMode = "straight"
           }
+          // Backfill
+          nodeModes[i] = cmd.nodeMode
         }
 
         const nodeMode: NodeMode = cmd.nodeMode || "straight"
@@ -1037,6 +1041,9 @@ export default function FabricCanvas() {
           }
         }
       })
+
+      // Update source of truth
+      pathObj.nodeModes = nodeModes
 
       // CRITICAL: Bring all anchors to front to ensure they are above any handles
       controlsRef.current.forEach((c) => {
@@ -1257,6 +1264,10 @@ export default function FabricCanvas() {
       const cmd = data.pathCmd
       cmd.nodeMode = mode
 
+      // Update persistent nodeModes array
+      if (!pathObj.nodeModes) pathObj.nodeModes = []
+      pathObj.nodeModes[data.index] = mode
+
       // 1. STRAIGHT: Collapse handles
       if (mode === "straight") {
         const anchorX = cmd[cmd.length - 2] as number
@@ -1385,6 +1396,8 @@ export default function FabricCanvas() {
 
       // Force mode to detached when manually controlling sides
       cmd.nodeMode = "detached"
+      if (!pathObj.nodeModes) pathObj.nodeModes = []
+      pathObj.nodeModes[idx] = "detached"
 
       const anchorX = cmd[cmd.length - 2] as number
       const anchorY = cmd[cmd.length - 1] as number
