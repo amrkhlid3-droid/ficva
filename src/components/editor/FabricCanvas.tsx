@@ -941,8 +941,10 @@ export default function FabricCanvas() {
               prevY = 0
             if (i > 0) {
               const prev = pathCommands[i - 1]
-              prevX = prev[prev.length - 2] as number
-              prevY = prev[prev.length - 1] as number
+              if (prev) {
+                prevX = prev[prev.length - 2] as number
+                prevY = prev[prev.length - 1] as number
+              }
             }
 
             const cp1X = cmd[1] as number
@@ -1047,8 +1049,9 @@ export default function FabricCanvas() {
 
       // CRITICAL: Bring all anchors to front to ensure they are above any handles
       controlsRef.current.forEach((c) => {
-        if (c.data?.type === "anchor") {
-          canvas.bringObjectToFront(c)
+        const cp = c as ControlPoint
+        if (cp.data?.type === "anchor") {
+          canvas.bringObjectToFront(cp)
         }
       })
 
@@ -1124,7 +1127,7 @@ export default function FabricCanvas() {
           // Handle In for M in closed path
           const pathData = pathObj.path as PathCommand[]
           const lastIdx = pathData.length - 1
-          if (pathData[lastIdx][0] === "Z") {
+          if (pathData[lastIdx] && pathData[lastIdx][0] === "Z") {
             const closingCmd = pathData[lastIdx - 1]
             if (closingCmd && closingCmd[0] === "C") {
               closingCmd[3] = (closingCmd[3] as number) + dx
@@ -1280,7 +1283,7 @@ export default function FabricCanvas() {
         } else if (cmd[0] === "M") {
           // Handle In for 'M' is the CP2 of the closing command (if closed)
           const lastIdx = pathData.length - 1
-          const isClosed = pathData[lastIdx][0] === "Z"
+          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
           if (isClosed) {
             // The command closing the path (before Z)
             const closingCmd = pathData[lastIdx - 1]
@@ -1412,7 +1415,7 @@ export default function FabricCanvas() {
           } else if (cmd[0] === "M") {
             // M case
             const lastIdx = pathData.length - 1
-            const isClosed = pathData[lastIdx][0] === "Z"
+            const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
             if (isClosed) {
               const closingCmd = pathData[lastIdx - 1]
               if (closingCmd && closingCmd[0] === "C") {
