@@ -1399,120 +1399,73 @@ export default function FabricCanvas() {
           // Already has handles, align them
           const dx = hInX - anchorX
           const dy = hInY - anchorY
-
           if (dx === 0 && dy === 0) {
             // In collapsed, use Out to set In
             const dxOut = hOutX - anchorX
             const dyOut = hOutY - anchorY
             newHInX = anchorX - dxOut
             newHInY = anchorY - dyOut
-            newHOutX = hOutX.newHOutY = // Ensure we keep the existing Out
-              hOutY
           } else {
             // In exists, set Out to mirror In
             newHOutX = anchorX - dx
             newHOutY = anchorY - dy
-            newHInX = hInX // Ensure we keep the existing In
-            newHInY = hInY
           }
         }
 
-        // WRITE BACK TO DATA & PROMOTE L -> C
-
-        // 1. Current Command (cmd)
-        if (cmd[0] === "L") {
-          // Promote to C
-          // We need prev point for CP1.
-          // CP1 = PrevAnchor. CP2 = NewHIn. Anchor = Anchor.
-          let prevX = 0
-          let prevY = 0
-          if (data.index > 0) {
-            const prev = pathData[data.index - 1]
-            prevX = prev[prev.length - 2] as number
-            prevY = prev[prev.length - 1] as number
-          } else {
-            // Index 0 shouldn't be L usually, but if so, prev is 0,0 or map to itself
-            prevX = anchorX
-            prevY = anchorY
-          }
-
-          // Replace content of cmd array
-          // L x y -> C cp1x cp1y cp2x cp2y x y
-          cmd.splice(
-            0,
-            cmd.length,
-            "C",
-            prevX,
-            prevY,
-            newHInX,
-            newHInY,
-            anchorX,
-            anchorY
-          )
-        } else if (cmd[0] === "C") {
+        // WRITE BACK TO DATA
+        if (cmd[0] === "C") {
           cmd[3] = newHInX
           cmd[4] = newHInY
         } else if (cmd[0] === "M") {
           const lastIdx = pathData.length - 1
-          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
-          if (isClosed) {
-            const closingCmd = pathData[lastIdx - 1]
-            if (closingCmd) {
-              if (closingCmd[0] === "L") {
-                // Promote Closing Cmd (L -> C)
-                // Prev is Start Point (Index 0). so CP1 = M.x, M.y?
-                // No, closing cmd connects LastPoint -> StartPoint.
-                // PrevAnchor is LastPoint.
-                // CP1 = LastPoint. CP2 = newHIn (for M). Anchor = M.
-                // Wait, M handle in is controlled by closingCmd's CP2.
+          const closingCmd = pathData[lastIdx]
 
-                // We need coordinate of Last Point (before closingCmd).
-                const preClose = pathData[lastIdx - 2] // The one before last?
-                // closingCmd is at lastIdx - 1.
-
-                // Let's simplified: if L, we just need to set CP2.
-                // L x y. We need to find P_prev.
-                const pPrevX = closingCmd[closingCmd.length - 2] // Wait, L is current? No closingCmd is the segment.
-                // closingCmd ends at M. So it's L mx my?
-                // Fabric usually doesn't have explicit line to M before Z?
-                // If closingCmd exists, we promote it.
-
-                // Actually, strictly handling "nextCmd" (Handle Out) is the priority for the user issue.
-                // M Handle In issue is rare if Z is used.
-              }
-
-              if (closingCmd[0] === "C") {
-                closingCmd[3] = newHInX
-                closingCmd[4] = newHInY
-              }
+          // Check for Z -> C Promotion (Start Point Mirroring)
+          if (closingCmd && closingCmd[0] === "Z") {
+            // Need Last Point coordinates for CP1 default (Straight)
+            let prevX = 0,
+              prevY = 0
+            const prevCmd = pathData[lastIdx - 1]
+            if (prevCmd) {
+              prevX = prevCmd[prevCmd.length - 2] as number
+              prevY = prevCmd[prevCmd.length - 1] as number
             }
+
+            // Insert C: CP1=Last(Straight), CP2=newHIn, Anchor=M
+            // ['C', cp1x, cp1y, cp2x, cp2y, x, y]
+            const newC: PathCommand = [
+              "C",
+              prevX,
+              prevY,
+              newHInX,
+              newHInY,
+              cmd[1] as number,
+              cmd[2] as number,
+            ]
+            pathData.splice(lastIdx, 0, newC)
+          } else if (closingCmd && closingCmd[0] === "C") {
+            closingCmd[3] = newHInX
+            closingCmd[4] = newHInY
           }
         }
 
-        // 2. Next Command (nextCmd) - HANDLE OUT
+        // Handle Out
         if (nextCmd) {
-          if (nextCmd[0] === "L") {
-            // Promote L -> C
-            // Segment from Anchor -> NextAnchor.
-            // CP1 = newHOut. CP2 = NextAnchor. Anchor = NextAnchor.
-            const nX = nextCmd[1] as number
-            const nY = nextCmd[2] as number
-
-            // L x y -> C cp1x cp1y cp2x cp2y x y
-            nextCmd.splice(
-              0,
-              nextCmd.length,
-              "C",
-              newHOutX,
-              newHOutY,
-              nX,
-              nY,
-              nX,
-              nY
-            )
-          } else if (nextCmd[0] === "C") {
+          if (nextCmd[0] === "C") {
             nextCmd[1] = newHOutX
             nextCmd[2] = newHOutY
+          } else if (nextCmd[0] === "Z") {
+            // Promote Z to C (Last Point Mirroring)
+            // Segment: CurrentAnchor -> M
+            // We need M coordinates for Anchor
+            const startCmd = pathData[0]
+            const mX = startCmd[1] as number
+            const mY = startCmd[2] as number
+
+            // Insert C: CP1=newHOut, CP2=M(Straight), Anchor=M
+            // ['C', cp1x, cp1y, cp2x, cp2y, x, y]
+            const newC: PathCommand = ["C", newHOutX, newHOutY, mX, mY, mX, mY]
+            pathData.splice(data.index + 1, 0, newC)
           }
         }
       }
