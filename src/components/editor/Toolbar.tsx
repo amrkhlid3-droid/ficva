@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useTheme } from "next-themes"
 import { useEditorStore } from "@/store/useEditorStore"
 import { Rect, Circle, IText, Triangle, Line, Path } from "fabric"
 import {
@@ -38,6 +39,8 @@ export default function Toolbar() {
     activeTool,
     setActiveTool,
   } = useEditorStore()
+  const { theme } = useTheme()
+  const defaultColor = theme === "dark" ? "#ffffff" : "#000000"
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -60,19 +63,19 @@ export default function Toolbar() {
         object = new Rect({
           left,
           top,
-          fill: "#ff0000",
+          fill: defaultColor,
           width: 100,
           height: 100,
         })
         break
       case "circle":
-        object = new Circle({ left, top, fill: "#00ff00", radius: 50 })
+        object = new Circle({ left, top, fill: defaultColor, radius: 50 })
         break
       case "triangle":
         object = new Triangle({
           left,
           top,
-          fill: "#0000ff",
+          fill: defaultColor,
           width: 100,
           height: 100,
         })
@@ -81,7 +84,7 @@ export default function Toolbar() {
         object = new Line([0, 0, 100, 0], {
           left,
           top,
-          stroke: "#000000",
+          stroke: defaultColor,
           strokeWidth: 4,
         })
         break
@@ -90,7 +93,7 @@ export default function Toolbar() {
         object = new Path("M 0 0 L 100 0 M 90 -5 L 100 0 L 90 5", {
           left,
           top,
-          stroke: "#000000",
+          stroke: defaultColor,
           strokeWidth: 4,
           fill: "",
           strokeLineCap: "round",
@@ -136,7 +139,7 @@ export default function Toolbar() {
       left: 100,
       top: 200,
       fontFamily: "Inter, sans-serif",
-      fill: "#333333",
+      fill: defaultColor,
       fontSize,
       fontWeight,
     })

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { Canvas, Circle, FabricObject, Line, Path, Point, util } from "fabric"
+import { useTheme } from "next-themes"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
@@ -14,6 +15,7 @@ export default function FabricCanvas() {
   const setCanvas = useEditorStore((s) => s.setCanvas)
   const history = useEditorStore((s) => s.history)
   const syncLayers = useEditorStore((s) => s.syncLayers)
+  const { theme } = useTheme()
 
   // Track start state for drag operations
   const dragStartRef = useRef<Partial<FabricObject> | null>(null)
@@ -216,6 +218,20 @@ export default function FabricCanvas() {
       canvas.dispose()
     }
   }, [setCanvas, history, syncLayers])
+
+  // Theme-aware default pen color
+  const setPenToolConfig = useEditorStore((s) => s.setPenToolConfig)
+  const penToolConfig = useEditorStore((s) => s.penToolConfig)
+
+  useEffect(() => {
+    // Only override if the user hasn't selected a specific color (i.e., it matches a default black/white)
+    // AND it conflicts with the new theme.
+    if (theme === "dark" && penToolConfig.stroke === "#000000") {
+      setPenToolConfig({ stroke: "#ffffff" })
+    } else if (theme === "light" && penToolConfig.stroke === "#ffffff") {
+      setPenToolConfig({ stroke: "#000000" })
+    }
+  }, [theme, penToolConfig.stroke, setPenToolConfig])
 
   // --- Pen Tool Logic ---
   const activeTool = useEditorStore((s) => s.activeTool)
