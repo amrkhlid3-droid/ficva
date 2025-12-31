@@ -1,6 +1,6 @@
 import "fabric"
 
-export type NodeMode = "straight" | "mirrored" | "detached"
+export type NodeMode = "straight" | "mirrored"
 
 declare module "fabric" {
   // Augment the base FabricObject interface

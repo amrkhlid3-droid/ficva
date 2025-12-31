@@ -10,7 +10,7 @@ import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand
 import type { NodeMode } from "@/types/fabric" // Import if possible, or redefine
 
 // Fallback if import fails (safe way)
-// type NodeMode = "straight" | "mirrored" | "detached"
+// type NodeMode = "straight" | "mirrored"
 
 /**
  * Custom interface for Path Commands stored in Fabric.
@@ -1157,11 +1157,7 @@ export default function FabricCanvas() {
         if (prevIndex >= 0) {
           const pathData = pathObj.path as PathCommand[]
           const prevCmd = pathData[prevIndex]
-          if (
-            prevCmd &&
-            prevCmd.nodeMode === "mirrored" &&
-            prevCmd[0] === "C"
-          ) {
+          if (prevCmd && prevCmd[0] === "C") {
             // Mirroring around Prev Anchor (prevCmd[5], prevCmd[6])
             const px = prevCmd[5] as number
             const py = prevCmd[6] as number
@@ -1202,41 +1198,39 @@ export default function FabricCanvas() {
         // It should mirror with "Handle Out" of Current Anchor.
         // Handle Out of Current Anchor is Command I+1's cp1 (nextCmd[1], nextCmd[2]).
         // We check Current Anchor mode (cmd.nodeMode).
-        if (cmd.nodeMode === "mirrored") {
-          const nextIndex = data.index + 1
-          const pathData = pathObj.path as PathCommand[]
-          if (nextIndex < pathData.length) {
-            const nextCmd = pathData[nextIndex]
-            if (nextCmd && nextCmd[0] === "C") {
-              // Mirroring around Current Anchor (cmd[5], cmd[6])
-              const px = cmd[5] as number
-              const py = cmd[6] as number
-              const dx = rawX - px
-              const dy = rawY - py
+        // if (cmd.nodeMode === "mirrored") { // REMOVED: Always mirror if handles exist
+        const nextIndex = data.index + 1
+        const pathData = pathObj.path as PathCommand[]
+        if (nextIndex < pathData.length) {
+          const nextCmd = pathData[nextIndex]
+          if (nextCmd && nextCmd[0] === "C") {
+            // Mirroring around Current Anchor (cmd[5], cmd[6])
+            const px = cmd[5] as number
+            const py = cmd[6] as number
+            const dx = rawX - px
+            const dy = rawY - py
 
-              // New coords for mirrored handle
-              const newHx = px - dx
-              const newHy = py - dy
+            // New coords for mirrored handle
+            const newHx = px - dx
+            const newHy = py - dy
 
-              // Target: Handle Out of Curr (nextCmd[1], nextCmd[2])
-              nextCmd[1] = newHx
-              nextCmd[2] = newHy
+            // Target: Handle Out of Curr (nextCmd[1], nextCmd[2])
+            nextCmd[1] = newHx
+            nextCmd[2] = newHy
 
-              // VISUAL SYNC: Find the control for nextCmd's handle_in (which is CP1)
-              // CP1 of nextCmd is named "handle_in" in createControl (line 954)
-              // It has index = nextIndex
-              const mirroredControl = (
-                controlsRef.current as ControlPoint[]
-              ).find(
-                (c) =>
-                  c.data?.type === "handle_in" && c.data.index === nextIndex
-              )
+            // VISUAL SYNC: Find the control for nextCmd's handle_in (which is CP1)
+            // CP1 of nextCmd is named "handle_in" in createControl (line 954)
+            // It has index = nextIndex
+            const mirroredControl = (
+              controlsRef.current as ControlPoint[]
+            ).find(
+              (c) => c.data?.type === "handle_in" && c.data.index === nextIndex
+            )
 
-              if (mirroredControl) {
-                const worldPt = toWorld(newHx, newHy)
-                mirroredControl.set({ left: worldPt.x, top: worldPt.y })
-                mirroredControl.setCoords()
-              }
+            if (mirroredControl) {
+              const worldPt = toWorld(newHx, newHy)
+              mirroredControl.set({ left: worldPt.x, top: worldPt.y })
+              mirroredControl.setCoords()
             }
           }
         }
@@ -1359,7 +1353,6 @@ export default function FabricCanvas() {
           }
         }
       }
-      // 3. DETACHED: Do nothing (just allow independent movement)
 
       updatePath()
       // Re-enter edit mode to refresh control visibility (Straight handles disappear)
@@ -1382,94 +1375,7 @@ export default function FabricCanvas() {
       }
     }
 
-    const handleNodeHandleMode = (e: {
-      target: FabricObject
-      side: "in" | "out"
-      mode: "curve" | "line"
-    }) => {
-      if (!editingPathRef.current) return
-      const pathObj = editingPathRef.current
-      const pathData = pathObj.path as PathCommand[]
-
-      const target = e.target as ControlPoint
-      if (!target.data || target.data.type !== "anchor") return
-
-      const cmd = target.data.pathCmd
-      const idx = target.data.index
-
-      // Force mode to detached when manually controlling sides
-      cmd.nodeMode = "detached"
-      if (!pathObj.nodeModes) pathObj.nodeModes = []
-      pathObj.nodeModes[idx] = "detached"
-
-      const anchorX = cmd[cmd.length - 2] as number
-      const anchorY = cmd[cmd.length - 1] as number
-
-      if (e.side === "in") {
-        // Handle In (CP2 of current command)
-        if (e.mode === "line") {
-          // Collapse to anchor
-          if (cmd[0] === "C") {
-            cmd[3] = anchorX
-            cmd[4] = anchorY
-          } else if (cmd[0] === "M") {
-            // M case
-            const lastIdx = pathData.length - 1
-            const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
-            if (isClosed) {
-              const closingCmd = pathData[lastIdx - 1]
-              if (closingCmd && closingCmd[0] === "C") {
-                closingCmd[3] = anchorX
-                closingCmd[4] = anchorY
-              }
-            }
-          }
-        } else {
-          // Extend logic (Curve)
-          if (cmd[0] === "C") {
-            if (cmd[3] === anchorX && cmd[4] === anchorY) {
-              cmd[3] = anchorX - 20
-              cmd[4] = anchorY
-            }
-          }
-        }
-      }
-
-      if (e.side === "out") {
-        const nextCmd = pathData[idx + 1]
-        if (nextCmd && nextCmd[0] === "C") {
-          if (e.mode === "line") {
-            nextCmd[1] = anchorX
-            nextCmd[2] = anchorY
-          } else {
-            if (nextCmd[1] === anchorX && nextCmd[2] === anchorY) {
-              nextCmd[1] = anchorX + 20
-              nextCmd[2] = anchorY
-            }
-          }
-        }
-      }
-
-      updatePath()
-      enterEditMode(pathObj)
-
-      // Re-select anchor
-      const newControls = controlsRef.current
-      const newAnchor = newControls.find((c) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = (c as any).data
-        return d && d.type === "anchor" && d.index === idx
-      })
-
-      if (newAnchor) {
-        canvas.setActiveObject(newAnchor)
-        useEditorStore.getState().setSelectedObjects([newAnchor])
-        canvas.requestRenderAll()
-      }
-    }
-
     canvas.on("node:mode:change", handleNodeModeChange)
-    canvas.on("node:handle:mode", handleNodeHandleMode)
 
     canvas.on("mouse:dblclick", handleDblClick)
     canvas.on("mouse:down", handleMouseDown)
