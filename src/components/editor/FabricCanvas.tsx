@@ -733,75 +733,24 @@ export default function FabricCanvas() {
       ghostPath.dirty = true
     }
 
-      canvas.requestRenderAll()
-    }
-
-    // === Simplified refresh (re-initializes controls) ===
+    // === NEW: Simplified refresh (uses enterEditMode) ===
+    // === NEW: Simplified refresh (uses enterEditMode) ===
     const refreshControlLines = () => {
       if (!editingPathRef.current) return
-      const pathWithData = editingPathRef.current as EditablePath & { customPathData?: CustomPathData }
+      const pathWithData = editingPathRef.current as EditablePath & {
+        customPathData?: CustomPathData
+      }
       if (pathWithData.customPathData) {
         enterEditMode(editingPathRef.current)
       }
     }
 
-    const createLine = (
-      p1: { x: number; y: number },
-      p2: { x: number; y: number }
-    ) => {
-      const line = new Line([p1.x, p1.y, p2.x, p2.y], {
-        if (!data) return
-
-        if (data.type === "anchor") {
-          anchorsByIndex.set(data.index, ctrl)
-        } else if (data.type === "handle_in") {
-          handleInByIndex.set(data.index, ctrl)
-        } else if (data.type === "handle_out") {
-          handleOutByIndex.set(data.index, ctrl)
-        }
-      })
-
-      // Actual simpler approach: find controls with .line property and update
-      controls.forEach((ctrl) => {
-        const c = ctrl
-        if (c.data?.type === "handle_in" && c.line) {
-          // l1 goes from previous anchor to this handle
-          const cmdIndex = c.data.index
-          const prevAnchor = anchorsByIndex.get(cmdIndex - 1)
-          if (prevAnchor) {
-            c.line.set({
-              x1: prevAnchor.left,
-              y1: prevAnchor.top,
-              x2: c.left,
-              y2: c.top,
-            })
-          }
-        }
-        if (c.data?.type === "handle_out" && c.line) {
-          // l2 goes from current anchor to this handle
-          const cmdIndex = c.data.index
-          const anchor = anchorsByIndex.get(cmdIndex)
-          if (anchor) {
-            c.line.set({
-              x1: anchor.left,
-              y1: anchor.top,
-              x2: c.left,
-              y2: c.top,
-            })
-          }
-        }
-      })
-
-      canvas.requestRenderAll()
-    }
-
-    // createControl - Updated for node-based architecture
     const createControl = (
       x: number,
       y: number,
       type: "anchor" | "handle_in" | "handle_out",
-      pathCmd: PathCommand | null,
-      nodeIndex: number,
+      pathCmd: PathCommand,
+      index: number,
       nodeMode: NodeMode
     ) => {
       const circle = new Circle({
@@ -816,9 +765,10 @@ export default function FabricCanvas() {
         hasControls: false,
         hasBorders: false,
         selectable: true,
-        padding: type === "anchor" ? 10 : 5,
-        data: { type, nodeIndex },
-        excludeFromExport: true,
+        padding: type === "anchor" ? 10 : 5, // Increase hit area
+        // Custom props
+        data: { type, pathCmd, index, nodeMode },
+        excludeFromExport: true, // CRITICAL: Do not save controls to JSON
       })
       return circle as ControlPoint
     }
@@ -1020,19 +970,17 @@ export default function FabricCanvas() {
       const matrix = pathObj.calcTransformMatrix()
       // Transform path coordinates to canvas coordinates
       // Path coordinates are relative to pathOffset (center of bounding box)
-      // We need to convert to local space, then apply the object's      // Transform function that will be reused
+      // We need to convert to local space, then apply the object's transform matrix
       const transformPoint = (x: number, y: number) => {
         const offset = pathObj.pathOffset || { x: 0, y: 0 }
+        // Local coordinates: subtract pathOffset, then add half width/height to get top-left relative
         const localX = x - offset.x
         const localY = y - offset.y
-        const localPt = new Point(localX, localY)
-        const worldPt = localPt.transform(matrix)
-        return worldPt
+        return new Point(localX, localY).transform(matrix)
       }
 
-      // === OLD CODE (DISABLED) ===
-      // const pathCommands = pathObj.path as PathCommand[]
-      // const nodeModes = pathObj.nodeModes || []
+      const pathCommands = pathObj.path as PathCommand[] // [['M', x, y], ['C', ...], ['Z']]
+      const nodeModes = pathObj.nodeModes || []
 
       /*
       // ===  OLD SVG COMMAND LOOP (DISABLED) ===
