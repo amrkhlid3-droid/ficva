@@ -1320,59 +1320,101 @@ export default function FabricCanvas() {
 
       // 2. MIRRORED: Expand handles if they were straight
       else if (mode === "mirrored") {
-        // If coming from Straight (collapsed), we need to drag them out.
-        // How to determine direction?
-        // Simple heuristic: Tangent to lines. Or just horizontal/angular average.
-        // If not collapsed, force alignment.
+        let anchorX = 0
+        let anchorY = 0
+        let hInX: number | undefined
+        let hInY: number | undefined
 
-        const anchorX = cmd[5] as number
-        const anchorY = cmd[6] as number
-
-        // Handle In (cmd[3], cmd[4])
-        const hInX = cmd[3] as number
-        const hInY = cmd[4] as number
-        // Handle Out (nextCmd[1], nextCmd[2])
-        const nextCmd = pathData[data.index + 1]
-        const hOutX = nextCmd ? (nextCmd[1] as number) : anchorX
-        const hOutY = nextCmd ? (nextCmd[2] as number) : anchorY
-
-        const isCollapsedIn = hInX === anchorX && hInY === anchorY
-        const isCollapsedOut = hOutX === anchorX && hOutY === anchorY
-
-        if (isCollapsedIn && isCollapsedOut) {
-          // Creating new handles from scratch.
-          // Try to find a reasonable tangent.
-          // Vector from PrevAnchor to NextAnchor?
-          // PrevAnchor: prevCmd[5], prevCmd[6] (or start if index=0)
-          // NextAnchor: nextCmd[5], nextCmd[6]
-          // Default: Horizontal + 20px
-          cmd[3] = anchorX - 20
-          cmd[4] = anchorY
-          if (nextCmd) {
-            nextCmd[1] = anchorX + 20
-            nextCmd[2] = anchorY
-          }
-        } else {
-          // Already has some handles (maybe detached). Align them.
-          // Align Out based on In (Mirror In).
-          const dx = hInX - anchorX
-          const dy = hInY - anchorY
-          // If In is collapsed but Out isn't, use Out to set In.
-          if (
-            dx === 0 &&
-            dy === 0 &&
-            (hOutX !== anchorX || hOutY !== anchorY)
-          ) {
-            const dxOut = hOutX - anchorX
-            const dyOut = hOutY - anchorY
-            cmd[3] = anchorX - dxOut
-            cmd[4] = anchorY - dyOut
-          } else {
-            if (nextCmd) {
-              nextCmd[1] = anchorX - dx
-              nextCmd[2] = anchorY - dy
+        // READ CURRENT STATE
+        if (cmd[0] === "C") {
+          anchorX = cmd[5] as number
+          anchorY = cmd[6] as number
+          hInX = cmd[3] as number
+          hInY = cmd[4] as number
+        } else if (cmd[0] === "M") {
+          // M x y
+          anchorX = cmd[1] as number
+          anchorY = cmd[2] as number
+          // Handle In for M is Closing Cmd's CP2
+          const lastIdx = pathData.length - 1
+          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
+          if (isClosed) {
+            const closingCmd = pathData[lastIdx - 1]
+            if (closingCmd && closingCmd[0] === "C") {
+              hInX = closingCmd[3] as number
+              hInY = closingCmd[4] as number
             }
           }
+        }
+
+        // Handle Out (nextCmd CP1)
+        const nextCmd = pathData[data.index + 1]
+        let hOutX: number | undefined
+        let hOutY: number | undefined
+        if (nextCmd && nextCmd[0] === "C") {
+          hOutX = nextCmd[1] as number
+          hOutY = nextCmd[2] as number
+        }
+
+        // Defaults if undefined
+        if (hInX === undefined) hInX = anchorX
+        if (hInY === undefined) hInY = anchorY
+        if (hOutX === undefined) hOutX = anchorX
+        if (hOutY === undefined) hOutY = anchorY
+
+        const isCollapsedIn =
+          Math.abs(hInX - anchorX) < 0.1 && Math.abs(hInY - anchorY) < 0.1
+        const isCollapsedOut =
+          Math.abs(hOutX - anchorX) < 0.1 && Math.abs(hOutY - anchorY) < 0.1
+
+        let newHInX = hInX
+        let newHInY = hInY
+        let newHOutX = hOutX
+        let newHOutY = hOutY
+
+        // Logic to calculate NEW positions
+        if (isCollapsedIn && isCollapsedOut) {
+          // Create new handles horizontal
+          newHInX = anchorX - 20
+          newHInY = anchorY
+          newHOutX = anchorX + 20
+          newHOutY = anchorY
+        } else {
+          // Already has handles, align them
+          const dx = hInX - anchorX
+          const dy = hInY - anchorY
+          if (dx === 0 && dy === 0) {
+            // In collapsed, use Out to set In
+            const dxOut = hOutX - anchorX
+            const dyOut = hOutY - anchorY
+            newHInX = anchorX - dxOut
+            newHInY = anchorY - dyOut
+          } else {
+            // In exists, set Out to mirror In
+            newHOutX = anchorX - dx
+            newHOutY = anchorY - dy
+          }
+        }
+
+        // WRITE BACK TO DATA
+        if (cmd[0] === "C") {
+          cmd[3] = newHInX
+          cmd[4] = newHInY
+        } else if (cmd[0] === "M") {
+          const lastIdx = pathData.length - 1
+          const isClosed = pathData[lastIdx] && pathData[lastIdx][0] === "Z"
+          if (isClosed) {
+            const closingCmd = pathData[lastIdx - 1]
+            if (closingCmd && closingCmd[0] === "C") {
+              closingCmd[3] = newHInX
+              closingCmd[4] = newHInY
+            }
+          }
+        }
+
+        if (nextCmd && nextCmd[0] === "C") {
+          nextCmd[1] = newHOutX
+          nextCmd[2] = newHOutY
         }
       }
 
