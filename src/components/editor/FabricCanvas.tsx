@@ -388,8 +388,8 @@ export default function FabricCanvas() {
         // DRAGGING OUT HANDLES from the second-to-last anchor (the one we just placed)
         const anchor = points[points.length - 2]!
         const start = dragStartPointRef.current
-        const dx = pointer.x - start.x
-        const dy = pointer.y - start.y
+        const dx = (pointer.x - start.x) * 0.5 // SENSITIVITY MULTIPLIER: 0.5 (Reduce handle length to half)
+        const dy = (pointer.y - start.y) * 0.5
         // cp2 (outgoing) is in the direction of the drag
         anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
         // cp1 (incoming) is opposite
