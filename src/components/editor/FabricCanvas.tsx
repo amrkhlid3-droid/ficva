@@ -1425,8 +1425,10 @@ export default function FabricCanvas() {
             prevY = 0
           if (data.index > 0) {
             const prev = pathData[data.index - 1]
-            prevX = prev[prev.length - 2] as number
-            prevY = prev[prev.length - 1] as number
+            if (prev) {
+              prevX = prev[prev.length - 2] as number
+              prevY = prev[prev.length - 1] as number
+            }
           } else {
             prevX = anchorX
             prevY = anchorY
@@ -1497,10 +1499,20 @@ export default function FabricCanvas() {
           } else if (nextCmd[0] === "Z") {
             // Promote Z -> C (Last Point Mirroring)
             const startCmd = pathData[0]
-            const mX = startCmd[1] as number
-            const mY = startCmd[2] as number
-            const newC: PathCommand = ["C", newHOutX, newHOutY, mX, mY, mX, mY]
-            pathData.splice(data.index + 1, 0, newC)
+            if (startCmd) {
+              const mX = startCmd[1] as number
+              const mY = startCmd[2] as number
+              const newC: PathCommand = [
+                "C",
+                newHOutX,
+                newHOutY,
+                mX,
+                mY,
+                mX,
+                mY,
+              ]
+              pathData.splice(data.index + 1, 0, newC)
+            }
           }
         }
       }
