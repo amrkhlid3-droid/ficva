@@ -1259,6 +1259,62 @@ export default function FabricCanvas() {
       const data = target.data
       if (!data) return
 
+      // === NODE-BASED DRAGGING (NEW) ===
+      const pathObj = editingPathRef.current
+      const pathWithData = pathObj as EditablePath & {
+        customPathData?: CustomPathData
+      }
+
+      if (!pathWithData.customPathData) {
+        console.warn("[handleObjectMoving] No customPathData")
+        return
+      }
+
+      const { nodes } = pathWithData.customPathData
+      const nodeIndex = data.nodeIndex
+
+      if (nodeIndex === undefined || !nodes[nodeIndex]) {
+        console.warn("[handleObjectMoving] Invalid nodeIndex:", nodeIndex)
+        return
+      }
+
+      // 坐标转换
+      const matrix = pathObj.calcTransformMatrix()
+      const invertedMatrix = util.invertTransform(matrix)
+      const localPoint = new Point(target.left, target.top).transform(
+        invertedMatrix
+      )
+      const offset = pathObj.pathOffset || { x: 0, y: 0 }
+      const rawX = localPoint.x + offset.x
+      const rawY = localPoint.y + offset.y
+
+      // 处理锚点拖动
+      if (data.type === "anchor") {
+        // 直接更新节点位置
+        nodes[nodeIndex].anchor.x = rawX
+        nodes[nodeIndex].anchor.y = rawY
+
+        // 重新生成 SVG Path
+        regeneratePath()
+
+        // 刷新控件连线
+        refreshControlLines()
+        return
+      }
+
+      // TODO: 处理 handle 拖动
+      // if (data.type === "handle_in" || data.type === "handle_out") { ... }
+    }
+
+    // === OLD LOGIC (DISABLED) ===
+    const handleObjectMoving_OLD = (e: { target: FabricObject }) => {
+      /*
+      // 旧的基于 pathCmd 的逻辑已废弃
+      if (!editingPathRef.current) return
+      const target = e.target as ControlPoint
+      const data = target.data
+      if (!data) return
+
       // Inverse transform to get local coordinate (path space)
       const pathObj = editingPathRef.current
       const matrix = pathObj.calcTransformMatrix()
@@ -1493,7 +1549,8 @@ export default function FabricCanvas() {
 
       updatePath()
       refreshControlLines()
-    }
+      */
+    } // End of handleObjectMoving_OLD
 
     // LISTENER FOR MODE CHANGE
 
