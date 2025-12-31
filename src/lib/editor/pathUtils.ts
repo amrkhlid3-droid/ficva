@@ -42,6 +42,9 @@ export function nodesToSvgPath(data: CustomPathData): PathCommand[] {
     const nextIndex = (i + 1) % n
     const next = nodes[nextIndex]
 
+    // 安全检查
+    if (!curr || !next) continue
+
     // 如果是开放路径的最后一个点，停止
     if (i === n - 1 && !closed) break
 

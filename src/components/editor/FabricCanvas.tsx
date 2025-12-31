@@ -1552,6 +1552,8 @@ export default function FabricCanvas() {
       */
     } // End of handleObjectMoving_OLD
 
+    /*
+    // === OLD FUNCTION (DISABLED) - handleNodeModeChange ===
     // LISTENER FOR MODE CHANGE
 
     const handleNodeModeChange = (e: {
