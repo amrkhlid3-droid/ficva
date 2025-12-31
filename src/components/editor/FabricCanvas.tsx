@@ -683,8 +683,15 @@ export default function FabricCanvas() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ghostPath = (pathObj as any)._ghostPath as Path
       if (ghostPath) {
-        // Sync path data so ghost shape matches original
-        ghostPath.set({ path: pathObj.path })
+        // Sync path data directly to avoid Fabric recalculating dimensions/offset
+        // which would cause the ghost path to shift relative to controls.
+        ghostPath.path = pathObj.path
+        // Force dimensions/offset to match original exactly (Critical for alignment)
+        ghostPath.pathOffset = pathObj.pathOffset
+        ghostPath.width = pathObj.width
+        ghostPath.height = pathObj.height
+
+        ghostPath.dirty = true
       }
 
       // Mark as dirty so Fabric re-renders the path with new coordinates
