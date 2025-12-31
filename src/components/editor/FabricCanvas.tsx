@@ -7,19 +7,13 @@ import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
-import type { NodeMode } from "@/types/fabric" // Import if possible, or redefine
-
-// Fallback if import fails (safe way)
-// type NodeMode = "straight" | "mirrored"
+import type { NodeMode, PathNode, CustomPathData } from "@/types/fabric"
+import { nodesToSvgPath, createEmptyNode } from "@/lib/editor/pathUtils"
 
 /**
- * Custom interface for Path Commands stored in Fabric.
- * We attach 'nodeMode' to these array objects temporarily during editing.
+ * Control Point 数据结构（节点模式）
+ * 直接引用节点数组索引，而非 SVG Command
  */
-interface PathCommand extends Array<string | number> {
-  nodeMode?: NodeMode
-}
-
 interface ControlPoint extends Circle {
   line?: Line
   lineToHandle?: Line
@@ -27,9 +21,7 @@ interface ControlPoint extends Circle {
   lineFromAnchor?: boolean
   data?: {
     type: "anchor" | "handle_in" | "handle_out"
-    pathCmd: PathCommand
-    index: number
-    nodeMode?: NodeMode
+    nodeIndex: number // 指向 customPathData.nodes[nodeIndex]
   }
 }
 
@@ -704,28 +696,39 @@ export default function FabricCanvas() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(canvas as any).exitEditMode = clearControls
 
-    const updatePath = () => {
-      const pathObj = editingPathRef.current
-      if (!pathObj) return
+    /**
+     * 核心生成器：从节点数组重建 SVG Path
+     */
+    const regeneratePath = () => {
+      if (!editingPathRef.current) return
+      const pathObj = editingPathRef.current as EditablePath & {
+        customPathData?: CustomPathData
+      }
 
-      // Sync ghost path
+      if (!pathObj.customPathData) {
+        console.warn("No customPathData found on path object")
+        return
+      }
+
+      // 生成新的 SVG Path Commands
+      const newCommands = nodesToSvgPath(pathObj.customPathData)
+
+      // 更新 Path 对象
+      pathObj.set({ path: newCommands })
+      pathObj.setCoords()
+      pathObj.dirty = true
+
+      // 同步 Ghost Path
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ghostPath = (pathObj as any)._ghostPath as Path
       if (ghostPath) {
-        // Sync path data directly to avoid Fabric recalculating dimensions/offset
-        // which would cause the ghost path to shift relative to controls.
-        ghostPath.path = pathObj.path
-        // Force dimensions/offset to match original exactly (Critical for alignment)
+        ghostPath.path = newCommands
         ghostPath.pathOffset = pathObj.pathOffset
         ghostPath.width = pathObj.width
         ghostPath.height = pathObj.height
-
         ghostPath.dirty = true
       }
 
-      // Mark as dirty so Fabric re-renders the path with new coordinates
-      // Don't recalculate bounding box during drag - it would change the coordinate system
-      pathObj.dirty = true
       canvas.requestRenderAll()
     }
 
