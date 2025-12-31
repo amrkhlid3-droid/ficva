@@ -166,7 +166,12 @@ export const useEditorStore = create<EditorState & EditorActions>()((
             obj.type === "activeSelection" ||
             (obj.type === "group" &&
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (obj as any)._isActiveSelection)
+              (obj as any)._isActiveSelection) ||
+            // Ignore objects marked for exclusion (controls, ghost paths)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (obj as any).excludeFromExport ||
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (obj as any).isGhost
           ) {
             return
           }
