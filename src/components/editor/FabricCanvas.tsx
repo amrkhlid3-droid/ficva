@@ -725,24 +725,14 @@ export default function FabricCanvas() {
       // 同步 Ghost Path
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ghostPath = (pathObj as any)._ghostPath as Path
-      if (ghostPath) {
-        ghostPath.path = newCommands
-        ghostPath.pathOffset = pathObj.pathOffset
-        ghostPath.width = pathObj.width
-        ghostPath.height = pathObj.height
-        ghostPath.dirty = true
-      }
+      ghostPath.pathOffset = pathObj.pathOffset
+      ghostPath.width = pathObj.width
+      ghostPath.height = pathObj.height
+      ghostPath.dirty = true
+    }
 
-      /*
-    // @ts-nocheck
-    // === OLD FUNCTION (DISABLED) ===
-    // Refresh all control line positions based on current anchor/handle positions
+    // === NEW: Simplified refresh (uses enterEditMode) ===
     const refreshControlLines = () => {
-      const controls = controlsRef.current as ControlPoint[]
-
-      // Find all anchors and handles, build a map by command index
-      const anchorsByIndex: Map<number, ControlPoint> = new Map()
-      const handleInByIndex: Map<number, ControlPoint> = new Map()
       const handleOutByIndex: Map<number, ControlPoint> = new Map()
 
       controls.forEach((ctrl) => {
