@@ -733,9 +733,9 @@ export default function FabricCanvas() {
         ghostPath.dirty = true
       }
 
-      canvas.requestRenderAll()
-    }
-
+      /*
+    // @ts-nocheck
+    // === OLD FUNCTION (DISABLED) ===
     // Refresh all control line positions based on current anchor/handle positions
     const refreshControlLines = () => {
       const controls = controlsRef.current as ControlPoint[]
@@ -1553,6 +1553,7 @@ export default function FabricCanvas() {
     } // End of handleObjectMoving_OLD
 
     /*
+    // @ts-nocheck - Old code, disabled
     // === OLD FUNCTION (DISABLED) - handleNodeModeChange ===
     // LISTENER FOR MODE CHANGE
 
