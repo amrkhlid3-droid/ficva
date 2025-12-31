@@ -1395,7 +1395,7 @@ export default function FabricCanvas() {
       canvas.off("mouse:down", handleMouseDown)
       canvas.off("object:moving", handleObjectMoving)
       canvas.off("node:mode:change", handleNodeModeChange)
-      canvas.off("node:handle:mode", handleNodeHandleMode)
+
       clearControls()
     }
   }, [activeTool, setCanvas]) // Re-bind if tool changes? Yes, to enable/disable.
