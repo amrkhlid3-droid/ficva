@@ -7,14 +7,12 @@ import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
-import type { NodeMode, PathNode, CustomPathData } from "@/types/fabric"
+import type { NodeMode, CustomPathData } from "@/types/fabric"
 import { svgPathToNodes } from "@/lib/editor/pathConverter"
 import { nodesToSvgPath } from "@/lib/editor/pathUtils"
 
-// 临时保留：PathCommand 类型（重写完成后会删除）
-interface PathCommand extends Array<string | number> {
-  nodeMode?: NodeMode
-}
+// Restore PathCommand type for legacy support / Fabric compatibility
+type PathCommand = (string | number)[]
 
 /**
  * Control Point 数据结构（节点模式）
@@ -28,6 +26,7 @@ interface ControlPoint extends Circle {
   data?: {
     type: "anchor" | "handle_in" | "handle_out"
     nodeIndex: number // 指向 customPathData.nodes[nodeIndex]
+    nodeMode?: NodeMode
   }
 }
 
@@ -513,7 +512,7 @@ export default function FabricCanvas() {
         const commands = points.map((p, index) => {
           if (index === 0) {
             const cmd = ["M", p.x, p.y] as PathCommand
-            if (p.nodeMode) cmd.nodeMode = p.nodeMode
+            // if (p.nodeMode) cmd.nodeMode = p.nodeMode
             return cmd
           }
           const prev = points[index - 1]!
@@ -527,7 +526,7 @@ export default function FabricCanvas() {
             p.y,
           ] as PathCommand
 
-          if (p.nodeMode) cmd.nodeMode = p.nodeMode
+          // if (p.nodeMode) cmd.nodeMode = p.nodeMode
           return cmd
         })
         commands.push(["Z"])
@@ -724,33 +723,71 @@ export default function FabricCanvas() {
       pathObj.setCoords()
       pathObj.dirty = true
 
-      // 同步 Ghost Path
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ghostPath = (pathObj as any)._ghostPath as Path
-      ghostPath.pathOffset = pathObj.pathOffset
-      ghostPath.width = pathObj.width
-      ghostPath.height = pathObj.height
-      ghostPath.dirty = true
+      // Note: Ghost path will be recreated on mouse up for stability
     }
 
     // === NEW: Simplified refresh (uses enterEditMode) ===
     // === NEW: Simplified refresh (uses enterEditMode) ===
     const refreshControlLines = () => {
-      if (!editingPathRef.current) return
-      const pathWithData = editingPathRef.current as EditablePath & {
-        customPathData?: CustomPathData
-      }
-      if (pathWithData.customPathData) {
-        enterEditMode(editingPathRef.current)
-      }
+      const controls = controlsRef.current as ControlPoint[]
+      const anchorsByIndex: Map<number, ControlPoint> = new Map()
+      const handleInByIndex: Map<number, ControlPoint> = new Map()
+      const handleOutByIndex: Map<number, ControlPoint> = new Map()
+
+      controls.forEach((ctrl) => {
+        const data = ctrl.data
+        if (!data) return
+
+        if (data.type === "anchor") {
+          anchorsByIndex.set(data.nodeIndex, ctrl)
+        } else if (data.type === "handle_in") {
+          handleInByIndex.set(data.nodeIndex, ctrl)
+        } else if (data.type === "handle_out") {
+          handleOutByIndex.set(data.nodeIndex, ctrl)
+        }
+      })
+
+      // Actual simpler approach: find controls with .line property and update
+      controls.forEach((ctrl) => {
+        const c = ctrl
+        if (c.data?.type === "handle_in" && c.line) {
+          // handleIn connects to its OWN anchor (not previous!)
+          const nodeIndex = c.data.nodeIndex
+          const anchor = anchorsByIndex.get(nodeIndex)
+          if (anchor) {
+            c.line.set({
+              x1: anchor.left,
+              y1: anchor.top,
+              x2: c.left,
+              y2: c.top,
+            })
+            c.line.setCoords()
+          }
+        }
+        if (c.data?.type === "handle_out" && c.line) {
+          // handleOut connects to its OWN anchor
+          const nodeIndex = c.data.nodeIndex
+          const anchor = anchorsByIndex.get(nodeIndex)
+          if (anchor) {
+            c.line.set({
+              x1: anchor.left,
+              y1: anchor.top,
+              x2: c.left,
+              y2: c.top,
+            })
+            c.line.setCoords()
+          }
+        }
+      })
+
+      canvas.requestRenderAll()
     }
 
     const createControl = (
       x: number,
       y: number,
       type: "anchor" | "handle_in" | "handle_out",
-      pathCmd: PathCommand,
-      index: number,
+      nodeIndex: number,
       nodeMode: NodeMode
     ) => {
       const circle = new Circle({
@@ -767,26 +804,10 @@ export default function FabricCanvas() {
         selectable: true,
         padding: type === "anchor" ? 10 : 5, // Increase hit area
         // Custom props
-        data: { type, pathCmd, index, nodeMode },
+        data: { type, nodeIndex, nodeMode },
         excludeFromExport: true, // CRITICAL: Do not save controls to JSON
       })
       return circle as ControlPoint
-    }
-
-    const createLine = (
-      p1: { x: number; y: number },
-      p2: { x: number; y: number }
-    ) => {
-      const line = new Line([p1.x, p1.y, p2.x, p2.y], {
-        stroke: "#888888",
-        strokeWidth: 1,
-        selectable: false,
-        evented: false,
-        originX: "center",
-        originY: "center",
-        excludeFromExport: true, // CRITICAL: Do not save guidelines to JSON
-      })
-      return line
     }
 
     const enterEditMode = (pathObj: Path) => {
@@ -796,58 +817,68 @@ export default function FabricCanvas() {
       }
 
       if (!pathWithData.customPathData) {
-        console.log("[Node-Centric] Converting SVG Path to nodes...")
+        console.log(
+          "[Node-Centric] First-time initialization: converting SVG Path to nodes..."
+        )
+
+        // STEP 1: Normalize path FIRST (only on first init)
+        // Force all segments to be C commands to support handles.
+        const rawCmds = pathObj.path as PathCommand[]
+        let normalized = false
+        const newCmds: PathCommand[] = []
+        let lx = 0,
+          ly = 0,
+          sx = 0,
+          sy = 0
+
+        if (rawCmds) {
+          rawCmds.forEach((cmd) => {
+            if (cmd[0] === "M") {
+              sx = cmd[1] as number
+              sy = cmd[2] as number
+              lx = sx
+              ly = sy
+              newCmds.push(cmd)
+            } else if (cmd[0] === "L") {
+              normalized = true
+              const x = cmd[1] as number
+              const y = cmd[2] as number
+              // L -> C (Straight, 0 handles)
+              newCmds.push(["C", lx, ly, x, y, x, y])
+              lx = x
+              ly = y
+            } else if (cmd[0] === "C") {
+              lx = cmd[5] as number
+              ly = cmd[6] as number
+              newCmds.push(cmd)
+            } else if (cmd[0] === "Z") {
+              // Just pass through Z command, don't auto-close with C
+              // The path drawing tool should handle closure correctly
+              newCmds.push(["Z"])
+              lx = sx // Reset to start for any subsequent commands
+              ly = sy
+            }
+          })
+
+          if (normalized) {
+            pathObj.set({ path: newCmds })
+            pathObj.setCoords()
+            console.log("[Node-Centric] Path normalized (L->C conversion)")
+          }
+        }
+
+        // STEP 2: Parse the (now normalized) path
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         pathWithData.customPathData = svgPathToNodes(pathObj.path as any[])
         console.log(
-          "[Node-Centric] Nodes:",
-          pathWithData.customPathData.nodes.length
+          "[Node-Centric] Created",
+          pathWithData.customPathData.nodes.length,
+          "nodes"
         )
-      }
-
-      // 0. GENERATOR PATTERN: Normalize Path
-      // Force all segments to be C commands to support handles.
-      const rawCmds = pathObj.path as PathCommand[]
-      let normalized = false
-      const newCmds: PathCommand[] = []
-      let lx = 0,
-        ly = 0,
-        sx = 0,
-        sy = 0
-
-      if (rawCmds) {
-        rawCmds.forEach((cmd) => {
-          if (cmd[0] === "M") {
-            sx = cmd[1] as number
-            sy = cmd[2] as number
-            lx = sx
-            ly = sy
-            newCmds.push(cmd)
-          } else if (cmd[0] === "L") {
-            normalized = true
-            const x = cmd[1] as number
-            const y = cmd[2] as number
-            // L -> C (Straight, 0 handles)
-            newCmds.push(["C", lx, ly, x, y, x, y])
-            lx = x
-            ly = y
-          } else if (cmd[0] === "C") {
-            lx = cmd[5] as number
-            ly = cmd[6] as number
-            newCmds.push(cmd)
-          } else if (cmd[0] === "Z") {
-            // Ensure physical gap is closed with a C
-            if (Math.abs(lx - sx) > 0.1 || Math.abs(ly - sy) > 0.1) {
-              normalized = true
-              newCmds.push(["C", lx, ly, sx, sy, sx, sy])
-            }
-            newCmds.push(["Z"])
-          }
-        })
-
-        if (normalized) {
-          pathObj.set({ path: newCmds })
-          pathObj.setCoords()
-        }
+      } else {
+        console.log(
+          "[Node-Centric] Using existing customPathData (preserving user edits & modes)"
+        )
       }
 
       if (editingPathRef.current) {
@@ -880,10 +911,10 @@ export default function FabricCanvas() {
         objectCaching: false,
         fill: "", // Transparent fill prevents mouse detection on fill area
         // CRITICAL: Must not be fully transparent for hit detection to work!
-        stroke: "rgba(0,0,0,0.01)",
+        stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING
         strokeWidth: pathObj.strokeWidth || 1, // Match original width exactly
         strokeUniform: pathObj.strokeUniform, // Copy uniform scaling
-        selectable: false,
+        selectable: true, // Allow selecting to inspect data
         evented: true, // This object captures events
         perPixelTargetFind: true, // CRITICAL: Only stroke pixels trigger events
         hoverCursor: "default", // CRITICAL: Don't show selection cursor
@@ -901,7 +932,30 @@ export default function FabricCanvas() {
         excludeFromExport: true, // Don't save
 
         isGhost: true, // Mark as ghost to prevent double-click editing
+        // Lock movement to prevent accidental manipulation
+        lockMovementX: true,
+        lockMovementY: true,
+        lockRotation: true,
+        lockScalingX: true,
+        lockScalingY: true,
+        hasControls: false,
+        hasBorders: true, // Show border when selected to indicate selection
+
+        // Carry Data for Inspection
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        customPathData: (pathObj as any).customPathData,
       })
+
+      // Add Click Listener for Debugging
+      ghostPath.on("mousedown", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pObj = pathObj as any
+        console.group("Ghost Path Clicked")
+        console.log("Original Custom Data:", pObj.customPathData)
+        console.log("SVG Path Commands:", pObj.path)
+        console.groupEnd()
+      })
+
       console.log(
         "Ghost Path created. Original:",
         pathObj.strokeWidth,
@@ -928,8 +982,8 @@ export default function FabricCanvas() {
       })
 
       ghostPath.on("mouseout", () => {
-        ghostPath.set({ stroke: "rgba(0,0,0,0.01)" })
-        canvas.requestRenderAll()
+        // ghostPath.set({ stroke: "rgba(0,0,0,0.01)" }) // DISABLED FOR DEBUGGING
+        // canvas.requestRenderAll()
       })
 
       ghostPath.on("mousedown", () => {
@@ -978,9 +1032,6 @@ export default function FabricCanvas() {
         const localY = y - offset.y
         return new Point(localX, localY).transform(matrix)
       }
-
-      const pathCommands = pathObj.path as PathCommand[] // [['M', x, y], ['C', ...], ['Z']]
-      const nodeModes = pathObj.nodeModes || []
 
       /*
       // ===  OLD SVG COMMAND LOOP (DISABLED) ===
@@ -1153,23 +1204,77 @@ export default function FabricCanvas() {
         const { anchor } = node
         const p = transformPoint(anchor.x, anchor.y)
 
+        // 1. Create Anchor
         const anchorCtrl = createControl(
           p.x,
           p.y,
           "anchor",
-          null as any, // pathCmd 不再需要
           nodeIndex,
           node.mode
         )
-
-        // 更新 data 为新结构
-        anchorCtrl.data = {
-          type: "anchor",
-          nodeIndex: nodeIndex,
-        }
-
         canvas.add(anchorCtrl)
         controlsRef.current.push(anchorCtrl)
+
+        // 2. Create Handles (if Mirrored)
+        // Only show handles if mode is mirrored (or later: detached)
+        if (node.mode === "mirrored") {
+          // Handle In
+          const pIn = transformPoint(
+            anchor.x + node.handleIn.x,
+            anchor.y + node.handleIn.y
+          )
+          const handleIn = createControl(
+            pIn.x,
+            pIn.y,
+            "handle_in",
+            nodeIndex,
+            node.mode
+          )
+
+          // Create Line for Handle In
+          const lineIn = new Line([p.x, p.y, pIn.x, pIn.y], {
+            stroke: "#888888",
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+            originX: "center",
+            originY: "center",
+            excludeFromExport: true,
+          })
+
+          // Handle Out
+          const pOut = transformPoint(
+            anchor.x + node.handleOut.x,
+            anchor.y + node.handleOut.y
+          )
+          const handleOut = createControl(
+            pOut.x,
+            pOut.y,
+            "handle_out",
+            nodeIndex,
+            node.mode
+          )
+
+          // Create Line for Handle Out
+          const lineOut = new Line([p.x, p.y, pOut.x, pOut.y], {
+            stroke: "#888888",
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+            originX: "center",
+            originY: "center",
+            excludeFromExport: true,
+          })
+
+          // Link them for easy update
+          handleIn.line = lineIn
+          handleOut.line = lineOut
+
+          // Add everything to canvas and refs
+          // Order: lines first (behind), then handles
+          canvas.add(lineIn, lineOut, handleIn, handleOut)
+          controlsRef.current.push(lineIn, lineOut, handleIn, handleOut)
+        }
       })
 
       // CRITICAL: Bring all anchors to front to ensure they are above any handles
@@ -1255,255 +1360,190 @@ export default function FabricCanvas() {
         return
       }
 
-      // TODO: 处理 handle 拖动
-      // if (data.type === "handle_in" || data.type === "handle_out") { ... }
+      // 处理 Handle 拖动
+      if (data.type === "handle_in" || data.type === "handle_out") {
+        const node = nodes[nodeIndex]
+        const anchor = node.anchor
+
+        // Vector from anchor to handle (new position)
+        let dx = rawX - anchor.x
+        let dy = rawY - anchor.y
+
+        // Mirrored Mode Constraint: Min length 20px
+        if (node.mode === "mirrored") {
+          let len = Math.sqrt(dx * dx + dy * dy)
+          if (len < 0.1) len = 0.1 // Avoid div by zero
+
+          if (len < 20) {
+            const scale = 20 / len
+            dx *= scale
+            dy *= scale
+          }
+
+          // Update data
+          if (data.type === "handle_in") {
+            node.handleIn = { x: dx, y: dy }
+            node.handleOut = { x: -dx, y: -dy } // Mirror
+          } else {
+            node.handleOut = { x: dx, y: dy }
+            node.handleIn = { x: -dx, y: -dy } // Mirror
+          }
+        } else {
+          // Straight / Free Mode
+          if (data.type === "handle_in") {
+            node.handleIn = { x: dx, y: dy }
+          } else {
+            node.handleOut = { x: dx, y: dy }
+          }
+        }
+
+        // Helper to convert Path Coordinate to Canvas Coordinate
+        // (Copied from enterEditMode scope)
+        const transformPoint = (x: number, y: number) => {
+          const offset = pathObj.pathOffset || { x: 0, y: 0 }
+          const localX = x - offset.x
+          const localY = y - offset.y
+          return new Point(localX, localY).transform(matrix)
+        }
+
+        // Sync visual target position (in case of constraints)
+        // Convert back to canvas coordinates
+        const newWorld = transformPoint(anchor.x + dx, anchor.y + dy)
+        target.set({ left: newWorld.x, top: newWorld.y })
+        target.setCoords()
+
+        // Update opposite handle visual if mirrored
+        if (node.mode === "mirrored") {
+          const oppositeType =
+            data.type === "handle_in" ? "handle_out" : "handle_in"
+          const oppositeCtrl = (controlsRef.current as ControlPoint[]).find(
+            (c) =>
+              c.data?.type === oppositeType && c.data.nodeIndex === nodeIndex
+          )
+
+          if (oppositeCtrl) {
+            // Wait, if I drag handleIn(dx,dy), handleOut is (-dx,-dy).
+            // If I drag handleOut(dx,dy), handleIn is (-dx,-dy).
+            // So opposite represents -dx, -dy relative to anchor.
+
+            const opWorld = transformPoint(anchor.x - dx, anchor.y - dy)
+            oppositeCtrl.set({ left: opWorld.x, top: opWorld.y })
+            oppositeCtrl.setCoords()
+          }
+        }
+
+        // CRITICAL: Regenerate path and refresh lines AFTER updating control positions
+        regeneratePath()
+        refreshControlLines()
+      }
+    }
+
+    // Helper: Recreate Ghost Path with Seamless Replacement
+    const recreateGhostPath = () => {
+      const pathObj = editingPathRef.current
+      if (!canvas || !pathObj) return
+
+      // Keep reference to old ghost to remove LATER
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const oldGhost = (pathObj as any)._ghostPath as Path
+
+      // Recreate ghost path synchronously using new Path()
+      // This matches EXACTLY how the ghost path is created in enterEditMode
+      const newGhost = new Path(pathObj.path as unknown as PathCommand[], {
+        objectCaching: false,
+        fill: "", // No fill
+        stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING (Step 27 request)
+        strokeWidth: pathObj.strokeWidth || 1,
+        strokeUniform: pathObj.strokeUniform,
+        selectable: true,
+        evented: true,
+        perPixelTargetFind: true,
+        hoverCursor: "default",
+
+        excludeFromExport: true,
+        // @ts-expect-error -- Ghost property missing in types
+        isGhost: true,
+        lockMovementX: true,
+        lockMovementY: true,
+        lockRotation: true,
+        lockScalingX: true,
+        lockScalingY: true,
+        hasControls: false,
+        hasBorders: true,
+
+        // Copy transform properties explicitly (Sync with enterEditMode)
+        left: pathObj.left,
+        top: pathObj.top,
+        scaleX: pathObj.scaleX,
+        scaleY: pathObj.scaleY,
+        angle: pathObj.angle,
+        skewX: pathObj.skewX,
+        skewY: pathObj.skewY,
+        originX: pathObj.originX,
+        originY: pathObj.originY,
+        pathOffset: pathObj.pathOffset,
+      })
+
+      // Attach custom data
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(newGhost as any).customPathData = (pathObj as any).customPathData
+
+      // Re-attach event listener
+      newGhost.on("mousedown", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pObj = pathObj as any
+        console.group("Ghost Path Clicked")
+        console.log("Original Custom Data:", pObj.customPathData)
+        console.log("SVG Path Commands:", pObj.path)
+        console.groupEnd()
+      })
+
+      // Add new ghost to canvas
+      canvas.add(newGhost)
+
+      // Fix Layering:
+      // 1. Send ghost to back initially
+      // canvas.sendObjectToBack(newGhost)
+      // 2. But we want it ABOVE the pathObj.
+      // Let's try to just ensure Controls are ON TOP.
+      // Ghost covers PathObj (which is fine, it's outline over fill).
+
+      // Ensure specific layering if possible
+      const pathIndex = canvas.getObjects().indexOf(pathObj)
+      if (pathIndex > -1 && typeof canvas.moveObjectTo === "function") {
+        // @ts-expect-error - Check if method exists
+        canvas.moveObjectTo(newGhost, pathIndex + 1)
+      } else {
+        // Fallback: Just ensure controls are on top
+        // controlsRef.current.forEach(c => canvas.bringObjectToFront(c))
+      }
+
+      // Explicitly bring controls to front to be safe
+      controlsRef.current.forEach((c) => {
+        if (canvas.contains(c)) canvas.bringObjectToFront(c)
+      })
+
+      // Update reference
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(pathObj as any)._ghostPath = newGhost
+
+      // Remove old ghost
+      if (oldGhost) {
+        canvas.remove(oldGhost)
+      }
+
+      canvas.requestRenderAll()
+      console.log("Ghost Path Recreated (Synchronous & Layered)")
+    }
+
+    const handleGlobalMouseUp = () => {
+      // Trigger recreation on Mouse Up if we are editing
+      if (editingPathRef.current) {
+        recreateGhostPath()
+      }
     }
 
     // === OLD LOGIC (DISABLED) ===
-    const handleObjectMoving_OLD = (e: { target: FabricObject }) => {
-      /*
-      // 旧的基于 pathCmd 的逻辑已废弃
-      if (!editingPathRef.current) return
-      const target = e.target as ControlPoint
-      const data = target.data
-      if (!data) return
-
-      // Inverse transform to get local coordinate (path space)
-      const pathObj = editingPathRef.current
-      const matrix = pathObj.calcTransformMatrix()
-      const invertedMatrix = util.invertTransform(matrix)
-      const localPoint = new Point(target.left, target.top).transform(
-        invertedMatrix
-      )
-
-      // Convert local coordinates back to path coordinates (raw data space)
-      const offset = pathObj.pathOffset || { x: 0, y: 0 }
-
-      // Helper to convert Path Coordinate to Canvas Coordinate
-      const toWorld = (x: number, y: number) => {
-        const off = pathObj.pathOffset || { x: 0, y: 0 }
-        return new Point(x - off.x, y - off.y).transform(matrix)
-      }
-
-      const rawX = localPoint.x + offset.x
-      const rawY = localPoint.y + offset.y
-
-      const pathData = pathObj.path as PathCommand[]
-      const cmd = data.pathCmd // The command this node belongs to
-
-      // --- HELPER: Get Anchor Position ---
-      let anchorX = 0,
-        anchorY = 0
-      if (cmd[0] === "M") {
-        anchorX = cmd[1] as number
-        anchorY = cmd[2] as number
-      } else if (cmd[0] === "C") {
-        anchorX = cmd[5] as number
-        anchorY = cmd[6] as number
-      } else if (cmd[0] === "L") {
-        anchorX = cmd[1] as number
-        anchorY = cmd[2] as number
-      }
-
-      // --- MODE CHECK ---
-      const nodeMode = data.nodeMode || "straight"
-
-      if (data.type === "anchor") {
-        const dx = rawX - anchorX
-        const dy = rawY - anchorY
-
-        // 1. Update Anchor
-        if (cmd[0] === "M") {
-          cmd[1] = rawX
-          cmd[2] = rawY
-        } else if (cmd[0] === "C") {
-          cmd[5] = rawX
-          cmd[6] = rawY
-        } else if (cmd[0] === "L") {
-          // Fallback if L exists
-          cmd[1] = rawX
-          cmd[2] = rawY
-        }
-
-        // 2. Move Handle In (if exists)
-        // For M, Handle In is in Closing Command
-        if (cmd[0] === "M") {
-          const lastIdx = pathData.length - 1
-          if (
-            pathData[lastIdx] &&
-            pathData[lastIdx][0] === "C" &&
-            pathData[lastIdx + 1]?.[0] === "Z" // Wait, Z is last? No, my structure is [..., C, Z] where C is closing segment.
-            // My previous code inserted C at lastIdx. Z was pushed?
-            // Actually, Z is strictly last. Closing C is pathData[last-1].
-            // Let's safe-check: find the C that closes to M.
-            // It should be the command before Z.
-          ) {
-            // Find the closing segment
-            const zIndex = pathData.findIndex((c) => c[0] === "Z")
-            if (zIndex > 0) {
-              const closingCmd = pathData[zIndex - 1]
-              if (
-                closingCmd &&
-                closingCmd[0] === "C" &&
-                Math.abs((closingCmd[5] as number) - (anchorX + dx)) < 1 // Check if it targets M
-              ) {
-                closingCmd[3] = (closingCmd[3] as number) + dx
-                closingCmd[4] = (closingCmd[4] as number) + dy
-                // Also update anchor of closing segment to match M
-                closingCmd[5] = rawX
-                closingCmd[6] = rawY
-              }
-            }
-          }
-        } else if (cmd[0] === "C") {
-          // Handle In is cmd[3], cmd[4]
-          cmd[3] = (cmd[3] as number) + dx
-          cmd[4] = (cmd[4] as number) + dy
-        }
-
-        // 3. Move Handle Out (Next Cmd CP1)
-        const nextCmd = pathData[data.index + 1]
-        if (nextCmd && nextCmd[0] === "C") {
-          nextCmd[1] = (nextCmd[1] as number) + dx
-          nextCmd[2] = (nextCmd[2] as number) + dy
-        }
-
-        // STRICT STRAIGH MODE Enforcement
-        if (nodeMode === "straight") {
-          // Force handles to anchor position
-          // Handle In
-          if (cmd[0] === "C") {
-            cmd[3] = rawX
-            cmd[4] = rawY
-          } else if (cmd[0] === "M") {
-            // Sync closing Logic
-            const zIndex = pathData.findIndex((c) => c[0] === "Z")
-            if (zIndex > 0) {
-              const closingCmd = pathData[zIndex - 1]
-              if (closingCmd && closingCmd[0] === "C") {
-                closingCmd[3] = rawX
-                closingCmd[4] = rawY
-                closingCmd[5] = rawX
-                closingCmd[6] = rawY
-              }
-            }
-          }
-
-          // Handle Out
-          if (nextCmd && nextCmd[0] === "C") {
-            nextCmd[1] = rawX
-            nextCmd[2] = rawY
-          }
-        }
-      } else if (data.type === "handle_in" || data.type === "handle_out") {
-        if (nodeMode === "straight") {
-          // Should not happen if UI hides handles, but just in case
-          // Force back to anchor
-          target.left = toWorld(anchorX, anchorY).x
-          target.top = toWorld(anchorX, anchorY).y
-          return
-        }
-
-        // Mirrored Mode Logic
-        // 1. Calculate vector from anchor to mouse
-        let vX = rawX - anchorX
-        let vY = rawY - anchorY
-        let len = Math.sqrt(vX * vX + vY * vY)
-
-        // 2. Minimum Length Constraint (20px)
-        if (len < 20) {
-          if (len === 0) {
-            vX = 20
-            vY = 0
-            len = 20
-          } else {
-            const scale = 20 / len
-            vX *= scale
-            vY *= scale
-            len = 20
-          }
-        }
-
-        // 3. Update Coordinates based on which handle is dragged
-        let newHandleInX, newHandleInY, newHandleOutX, newHandleOutY
-
-        if (data.type === "handle_in") {
-          // Dragging In -> Out is opposite
-          newHandleInX = anchorX + vX
-          newHandleInY = anchorY + vY
-          newHandleOutX = anchorX - vX
-          newHandleOutY = anchorY - vY
-        } else {
-          // Dragging Out -> In is opposite
-          newHandleOutX = anchorX + vX
-          newHandleOutY = anchorY + vY
-          newHandleInX = anchorX - vX
-          newHandleInY = anchorY - vY
-        }
-
-        // 4. Update Path Data
-        // Handle In (cmd.cp2 or Closing.cp2)
-        if (cmd[0] === "M") {
-          const zIndex = pathData.findIndex((c) => c[0] === "Z")
-          if (zIndex > 0) {
-            const closingCmd = pathData[zIndex - 1]
-            if (closingCmd && closingCmd[0] === "C") {
-              closingCmd[3] = newHandleInX
-              closingCmd[4] = newHandleInY
-            }
-          }
-        } else if (cmd[0] === "C") {
-          cmd[3] = newHandleInX
-          cmd[4] = newHandleInY
-        }
-
-        // Handle Out (nextCmd.cp1)
-        const nextCmd = pathData[data.index + 1]
-        if (nextCmd && nextCmd[0] === "C") {
-          nextCmd[1] = newHandleOutX
-          nextCmd[2] = newHandleOutY
-        }
-
-        // 5. Update UI Control positions (Visual Sync)
-        target.set({
-          left: toWorld(
-            data.type === "handle_in" ? newHandleInX : newHandleOutX,
-            data.type === "handle_in" ? newHandleInY : newHandleOutY
-          ).x,
-          top: toWorld(
-            data.type === "handle_in" ? newHandleInX : newHandleOutX,
-            data.type === "handle_in" ? newHandleInY : newHandleOutY
-          ).y,
-        })
-
-        // Find opposite control and update it
-        const oppositeType =
-          data.type === "handle_in" ? "handle_out" : "handle_in"
-        const oppositeControl = (controlsRef.current as ControlPoint[]).find(
-          (c) => c.data?.index === data.index && c.data?.type === oppositeType
-        )
-        if (oppositeControl) {
-          const opX = data.type === "handle_in" ? newHandleOutX : newHandleInX
-          const opY = data.type === "handle_in" ? newHandleOutY : newHandleInY // Wait logic error in vX/vY usage above?
-          // Correction:
-          // If Dragging IN: vX is vector Anchor->Mouse(In). IN = Anchor + v. OUT = Anchor - v.
-          // If Dragging OUT: vX is vector Anchor->Mouse(Out). OUT = Anchor + v. IN = Anchor - v.
-
-          // Above logic:
-          // If In: newIn = A+v.
-          // If Out: newOut = A+v.
-          // Correct.
-
-          const worldOp = toWorld(opX, opY)
-          oppositeControl.set({ left: worldOp.x, top: worldOp.y })
-          oppositeControl.setCoords()
-        }
-      }
-
-      updatePath()
-      refreshControlLines()
-      */
-    } // End of handleObjectMoving_OLD
 
     /*
     // @ts-nocheck - Old code, disabled
@@ -1687,10 +1727,76 @@ export default function FabricCanvas() {
       target: FabricObject
       mode: NodeMode
     }) => {
-      console.warn(
-        "[handleNodeModeChange] Not yet implemented for node-based architecture"
-      )
-      // TODO: Implement node-based mode switching
+      if (!editingPathRef.current) return
+      const pathObj = editingPathRef.current as EditablePath & {
+        customPathData?: CustomPathData
+      }
+      if (!pathObj.customPathData) return
+
+      const targetCtrl = e.target as ControlPoint
+      if (!targetCtrl.data || targetCtrl.data.type !== "anchor") return
+
+      const nodeIndex = targetCtrl.data.nodeIndex
+      const node = pathObj.customPathData.nodes[nodeIndex]
+      // Safety check in case index is out of bounds
+      if (!node) return
+
+      const newMode = e.mode
+
+      console.log(`[Node Mode] Switching node ${nodeIndex} to ${newMode}`)
+
+      // Update Node Mode
+      node.mode = newMode
+
+      if (newMode === "mirrored") {
+        // Switch to Mirrored: Enforce symmetry
+        const isHandleInZero = node.handleIn.x === 0 && node.handleIn.y === 0
+        const isHandleOutZero = node.handleOut.x === 0 && node.handleOut.y === 0
+
+        if (isHandleInZero && isHandleOutZero) {
+          // Both handles are zero: Create default horizontal handles
+          node.handleIn = { x: -30, y: 0 }
+          node.handleOut = { x: 30, y: 0 }
+        } else {
+          // At least one handle exists: Enforce symmetry immediately
+          // Choose the longer handle to preserve curve shape
+          const lenIn = Math.sqrt(node.handleIn.x ** 2 + node.handleIn.y ** 2)
+          const lenOut = Math.sqrt(
+            node.handleOut.x ** 2 + node.handleOut.y ** 2
+          )
+
+          if (lenOut >= lenIn) {
+            // Use handleOut as reference, mirror to handleIn
+            node.handleIn = { x: -node.handleOut.x, y: -node.handleOut.y }
+          } else {
+            // Use handleIn as reference, mirror to handleOut
+            node.handleOut = { x: -node.handleIn.x, y: -node.handleIn.y }
+          }
+        }
+      } else if (newMode === "straight") {
+        // Switch to Straight: Zero out handles
+        node.handleIn = { x: 0, y: 0 }
+        node.handleOut = { x: 0, y: 0 }
+      }
+
+      // Regenerate & Refresh
+      regeneratePath()
+      enterEditMode(pathObj) // Re-create controls to show/hide handles
+
+      // RESTORE SELECTION
+      // After enterEditMode, selection is cleared. We need to find the anchor at 'nodeIndex' and re-select it.
+      const newControls = controlsRef.current as ControlPoint[]
+      const newAnchor = newControls.find((c) => {
+        const d = c.data
+        return d && d.type === "anchor" && d.nodeIndex === nodeIndex
+      })
+
+      if (newAnchor) {
+        canvas.setActiveObject(newAnchor)
+        // Trigger store update manually since we bypassed standard interaction
+        useEditorStore.getState().setSelectedObjects([newAnchor])
+        canvas.requestRenderAll()
+      }
     }
 
     // HIGHLIGHT SELECTION
@@ -1737,11 +1843,13 @@ export default function FabricCanvas() {
 
     canvas.on("mouse:dblclick", handleDblClick)
     canvas.on("mouse:down", handleMouseDown)
+    canvas.on("mouse:up", handleGlobalMouseUp)
     canvas.on("object:moving", handleObjectMoving)
 
     return () => {
       canvas.off("mouse:dblclick", handleDblClick)
       canvas.off("mouse:down", handleMouseDown)
+      canvas.off("mouse:up", handleGlobalMouseUp)
       canvas.off("object:moving", handleObjectMoving)
       canvas.off("node:mode:change", handleNodeModeChange)
       canvas.off("selection:created", handleSelection)

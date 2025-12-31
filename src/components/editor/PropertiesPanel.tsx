@@ -377,7 +377,7 @@ export default function PropertiesPanel() {
         <div className="space-y-6 p-4">
           <div className="flex items-center justify-between">
             <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-              Path Node {data.index}
+              Path Node {data.nodeIndex}
             </div>
           </div>
 
@@ -439,34 +439,32 @@ export default function PropertiesPanel() {
             </label>
             <div className="flex gap-2">
               {/* Check current type */}
-              {data.pathCmd && (
-                <>
-                  <button
-                    onClick={() => {
-                      if (canvas)
-                        canvas.fire("node:mode:change", {
-                          target: activeObject,
-                          mode: "straight",
-                        })
-                    }}
-                    className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "straight" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
-                  >
-                    Straight
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (canvas)
-                        canvas.fire("node:mode:change", {
-                          target: activeObject,
-                          mode: "mirrored",
-                        })
-                    }}
-                    className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "mirrored" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
-                  >
-                    Mirrored
-                  </button>
-                </>
-              )}
+              <>
+                <button
+                  onClick={() => {
+                    if (canvas)
+                      canvas.fire("node:mode:change", {
+                        target: activeObject,
+                        mode: "straight",
+                      })
+                  }}
+                  className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "straight" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                >
+                  Straight
+                </button>
+                <button
+                  onClick={() => {
+                    if (canvas)
+                      canvas.fire("node:mode:change", {
+                        target: activeObject,
+                        mode: "mirrored",
+                      })
+                  }}
+                  className={`flex-1 rounded border px-2 py-2 text-[10px] font-medium transition-colors ${data.nodeMode === "mirrored" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted border-border text-foreground bg-transparent"}`}
+                >
+                  Mirrored
+                </button>
+              </>
             </div>
           </div>
 
@@ -822,6 +820,8 @@ export default function PropertiesPanel() {
         <div className="border-t pt-4">
           <pre className="text-muted-foreground overflow-auto text-[10px]">
             {selectedObjects.length} object(s) selected
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {(activeObject as any).isGhost ? " (Ghost Path)" : ""}
           </pre>
         </div>
       </div>
