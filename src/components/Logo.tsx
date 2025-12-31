@@ -35,7 +35,7 @@ export function Logo({ className, showTitle = true, size = "md" }: LogoProps) {
       {showTitle && (
         <span
           className={cn(
-            "bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text font-bold text-transparent dark:from-blue-400 dark:to-purple-400",
+            "bg-linear-to-r from-blue-600 to-purple-600 bg-clip-text font-bold text-transparent dark:from-blue-400 dark:to-purple-400",
             textSize
           )}
         >

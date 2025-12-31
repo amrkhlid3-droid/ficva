@@ -344,7 +344,7 @@ export default function EditorPage() {
 
         {/* Left Sidebar (Collapsible, Fixed Width) */}
         {activeSidebar !== "none" && (
-          <div className="bg-background flex w-[300px] flex-col border-r">
+          <div className="bg-background flex w-75 flex-col border-r">
             <LeftSidebar />
           </div>
         )}
@@ -362,7 +362,7 @@ export default function EditorPage() {
         </main>
 
         {/* Right Sidebar (Fixed Width) */}
-        <div className="bg-background flex w-[300px] flex-col border-l">
+        <div className="bg-background flex w-75 flex-col border-l">
           <RightSidebar />
         </div>
       </div>

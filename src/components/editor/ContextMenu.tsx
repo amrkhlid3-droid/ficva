@@ -70,7 +70,7 @@ export default function ContextMenu() {
 
   return (
     <div
-      className="animate-in fade-in zoom-in-95 fixed z-50 min-w-[160px] overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-lg"
+      className="animate-in fade-in zoom-in-95 fixed z-50 min-w-40 overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-lg"
       style={{ left: position.x, top: position.y }}
     >
       <button
