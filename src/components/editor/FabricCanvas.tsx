@@ -922,14 +922,14 @@ export default function FabricCanvas() {
         const nodeMode: NodeMode = cmd.nodeMode || "straight"
 
         if (cmd[0] === "M") {
-          const p = transformPoint(cmd[1], cmd[2])
+          const p = transformPoint(cmd[1] as number, cmd[2] as number)
           const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
           canvas.bringObjectToFront(anchor) // Ensure top z-index
           controlsRef.current.push(anchor)
         }
         if (cmd[0] === "L") {
-          const p = transformPoint(cmd[1], cmd[2])
+          const p = transformPoint(cmd[1] as number, cmd[2] as number)
           const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
           canvas.bringObjectToFront(anchor) // Ensure top z-index
@@ -937,9 +937,9 @@ export default function FabricCanvas() {
         }
         if (cmd[0] === "C") {
           // C x1 y1, x2 y2, x y
-          const p1 = transformPoint(cmd[1], cmd[2]) // Control 1
-          const p2 = transformPoint(cmd[3], cmd[4]) // Control 2
-          const p = transformPoint(cmd[5], cmd[6]) // Anchor
+          const p1 = transformPoint(cmd[1] as number, cmd[2] as number) // Control 1
+          const p2 = transformPoint(cmd[3] as number, cmd[4] as number) // Control 2
+          const p = transformPoint(cmd[5] as number, cmd[6] as number) // Anchor
 
           const anchor = createControl(p.x, p.y, "anchor", cmd, i, nodeMode)
           canvas.add(anchor)
@@ -972,8 +972,8 @@ export default function FabricCanvas() {
               prevY = 0
             if (prevCmd) {
               const len = prevCmd.length
-              prevX = prevCmd[len - 2]
-              prevY = prevCmd[len - 1]
+              prevX = prevCmd[len - 2] as number
+              prevY = prevCmd[len - 1] as number
             }
             const prevP = transformPoint(prevX, prevY)
 
@@ -1134,14 +1134,14 @@ export default function FabricCanvas() {
       if (mode === "straight") {
         // Collapse Handle In of this anchor (cmd[3], cmd[4]) -> anchor (cmd[5], cmd[6])
         if (cmd[0] === "C") {
-          cmd[3] = cmd[5]
-          cmd[4] = cmd[6]
+          cmd[3] = cmd[5] as number
+          cmd[4] = cmd[6] as number
         }
         // Collapse Handle Out of this anchor (nextCmd[1], nextCmd[2]) -> anchor (cmd[5], cmd[6])
         const nextCmd = pathData[data.index + 1]
         if (nextCmd && nextCmd[0] === "C") {
-          nextCmd[1] = cmd[5]
-          nextCmd[2] = cmd[6]
+          nextCmd[1] = cmd[5] as number
+          nextCmd[2] = cmd[6] as number
         }
       }
 
