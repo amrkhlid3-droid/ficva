@@ -8,7 +8,8 @@ import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectC
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 import type { NodeMode, PathNode, CustomPathData } from "@/types/fabric"
-import { nodesToSvgPath, createEmptyNode } from "@/lib/editor/pathUtils"
+import { svgPathToNodes } from "@/lib/editor/pathConverter"
+import { nodesToSvgPath } from "@/lib/editor/pathUtils"
 
 // 临时保留：PathCommand 类型（重写完成后会删除）
 type PathCommand = (string | number)[]
@@ -836,6 +837,20 @@ export default function FabricCanvas() {
     }
 
     const enterEditMode = (pathObj: Path) => {
+      // === STEP 1: 初始化 customPathData ===
+      const pathWithData = pathObj as EditablePath & {
+        customPathData?: CustomPathData
+      }
+
+      if (!pathWithData.customPathData) {
+        console.log("[Node-Centric] Converting SVG Path to nodes...")
+        pathWithData.customPathData = svgPathToNodes(pathObj.path as any[])
+        console.log(
+          "[Node-Centric] Nodes:",
+          pathWithData.customPathData.nodes.length
+        )
+      }
+
       // 0. GENERATOR PATTERN: Normalize Path
       // Force all segments to be C commands to support handles.
       const rawCmds = pathObj.path as PathCommand[]
