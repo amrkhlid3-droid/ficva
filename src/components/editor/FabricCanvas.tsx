@@ -1066,160 +1066,177 @@ export default function FabricCanvas() {
       canvas.discardActiveObject() // Deselect everything
 
       // 3. Hover Logic on Ghost Path with Breathing Animation
+      // Store shared state on pathObj for access by recreateGhostPath
       const highlightColor = "#4f46e5"
-      let breathingAnimationId: number | null = null
-      let hoverIndicator: Circle | null = null
-      let isHovering = false // Track hover state to prevent mousedown from stopping animation
-
-      // Create hover indicator circle (hollow)
-      const createHoverIndicator = () => {
-        if (hoverIndicator) return hoverIndicator
-        hoverIndicator = new Circle({
-          radius: 6,
-          fill: "transparent",
-          stroke: highlightColor,
-          strokeWidth: 2,
-          originX: "center",
-          originY: "center",
-          selectable: false,
-          evented: false,
-          excludeFromExport: true,
-          visible: false,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any)
-        canvas.add(hoverIndicator)
-        return hoverIndicator
-      }
-
-      // Breathing animation function
-      const startBreathingAnimation = () => {
-        if (breathingAnimationId !== null) return
-
-        let opacity = 1
-        let increasing = false
-        const minOpacity = 0.3
-        const maxOpacity = 1
-        const step = 0.03
-
-        const animate = () => {
-          if (!ghostPath || !canvas) return
-
-          // Update opacity
-          if (increasing) {
-            opacity += step
-            if (opacity >= maxOpacity) {
-              opacity = maxOpacity
-              increasing = false
-            }
-          } else {
-            opacity -= step
-            if (opacity <= minOpacity) {
-              opacity = minOpacity
-              increasing = true
-            }
-          }
-
-          // Apply breathing effect to ghost path
-          ghostPath.set({ opacity })
-
-          // Apply to hover indicator if visible
-          if (hoverIndicator && hoverIndicator.visible) {
-            hoverIndicator.set({ opacity })
-          }
-
-          canvas.requestRenderAll()
-          breathingAnimationId = requestAnimationFrame(animate)
-        }
-
-        breathingAnimationId = requestAnimationFrame(animate)
-      }
-
-      // Stop breathing animation
-      const stopBreathingAnimation = () => {
-        if (breathingAnimationId !== null) {
-          cancelAnimationFrame(breathingAnimationId)
-          breathingAnimationId = null
-        }
-        // Reset opacity
-        ghostPath.set({ opacity: 1 })
-        if (hoverIndicator) {
-          hoverIndicator.set({ visible: false, opacity: 1 })
-        }
-        canvas.requestRenderAll()
-      }
-
-      // Update hover indicator to follow mouse pointer exactly
-      const updateHoverIndicatorPosition = (e: {
-        pointer?: Point
-        e?: MouseEvent
-      }) => {
-        if (!hoverIndicator) return
-
-        const indicator = hoverIndicator
-        // Get pointer position from event
-        let pointer: { x: number; y: number } | null = null
-        if (e.pointer) {
-          pointer = e.pointer
-        } else if (e.e && canvas) {
-          // Fabric object events may not have pointer, get from canvas
-          const canvasPointer = canvas.getViewportPoint(e.e)
-          pointer = { x: canvasPointer.x, y: canvasPointer.y }
-        }
-        if (!pointer) return
-
-        // Position indicator exactly at mouse pointer
-        indicator.set({
-          left: pointer.x,
-          top: pointer.y,
-          visible: true,
-        })
-        indicator.setCoords()
-      }
-
-      ghostPath.on("mouseover", () => {
-        isHovering = true
-        createHoverIndicator()
-        startBreathingAnimation()
-        canvas.requestRenderAll()
-      })
-
-      ghostPath.on("mousemove", (e) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        updateHoverIndicatorPosition(e as any)
-        canvas.requestRenderAll()
-      })
-
-      ghostPath.on("mouseout", () => {
-        isHovering = false
-        stopBreathingAnimation()
-        // Keep ghost path visible with highlight color (don't hide it)
-        ghostPath.set({ stroke: highlightColor, opacity: 1 })
-        canvas.requestRenderAll()
-      })
-
-      ghostPath.on("mousedown", (e) => {
-        // Keep animation running while clicking on the path
-        // Don't call discardActiveObject() as it triggers mouseout
-        console.log("Ghost path clicked")
-        // Restart animation if it stopped
-        if (isHovering && breathingAnimationId === null) {
-          startBreathingAnimation()
-        }
-        // Update indicator position on click too
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        updateHoverIndicatorPosition(e as any)
-        canvas.requestRenderAll()
-      })
-
-      // Cleanup function for when editing ends
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(ghostPath as any)._cleanupBreathing = () => {
-        stopBreathingAnimation()
-        if (hoverIndicator) {
-          canvas.remove(hoverIndicator)
-          hoverIndicator = null
+      const pathAny = pathObj as any
+      pathAny._ghostHoverState = {
+        breathingAnimationId: null as number | null,
+        hoverIndicator: null as Circle | null,
+        isHovering: false,
+        highlightColor,
+      }
+
+      // Helper to bind ghost path events (reusable for recreateGhostPath)
+      const bindGhostPathEvents = (gp: Path) => {
+        const state = pathAny._ghostHoverState
+
+        // Create hover indicator circle (hollow)
+        const createHoverIndicator = () => {
+          if (state.hoverIndicator) return state.hoverIndicator
+          state.hoverIndicator = new Circle({
+            radius: 6,
+            fill: "transparent",
+            stroke: state.highlightColor,
+            strokeWidth: 2,
+            originX: "center",
+            originY: "center",
+            selectable: false,
+            evented: false,
+            excludeFromExport: true,
+            visible: false,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any)
+          canvas.add(state.hoverIndicator)
+          return state.hoverIndicator
+        }
+
+        // Breathing animation function
+        const startBreathingAnimation = () => {
+          if (state.breathingAnimationId !== null) return
+
+          let opacity = 1
+          let increasing = false
+          const minOpacity = 0.3
+          const maxOpacity = 1
+          const step = 0.03
+
+          const animate = () => {
+            if (!gp || !canvas) return
+
+            // Update opacity
+            if (increasing) {
+              opacity += step
+              if (opacity >= maxOpacity) {
+                opacity = maxOpacity
+                increasing = false
+              }
+            } else {
+              opacity -= step
+              if (opacity <= minOpacity) {
+                opacity = minOpacity
+                increasing = true
+              }
+            }
+
+            // Apply breathing effect to ghost path
+            gp.set({ opacity })
+
+            // Apply to hover indicator if visible
+            if (state.hoverIndicator && state.hoverIndicator.visible) {
+              state.hoverIndicator.set({ opacity })
+            }
+
+            canvas.requestRenderAll()
+            state.breathingAnimationId = requestAnimationFrame(animate)
+          }
+
+          state.breathingAnimationId = requestAnimationFrame(animate)
+        }
+
+        // Stop breathing animation
+        const stopBreathingAnimation = () => {
+          if (state.breathingAnimationId !== null) {
+            cancelAnimationFrame(state.breathingAnimationId)
+            state.breathingAnimationId = null
+          }
+          // Reset opacity
+          gp.set({ opacity: 1 })
+          if (state.hoverIndicator) {
+            state.hoverIndicator.set({ visible: false, opacity: 1 })
+          }
+          canvas.requestRenderAll()
+        }
+
+        // Update hover indicator to follow mouse pointer exactly
+        const updateHoverIndicatorPosition = (e: {
+          pointer?: Point
+          e?: MouseEvent
+        }) => {
+          if (!state.hoverIndicator) return
+
+          const indicator = state.hoverIndicator
+          // Get pointer position from event
+          let pointer: { x: number; y: number } | null = null
+          if (e.pointer) {
+            pointer = e.pointer
+          } else if (e.e && canvas) {
+            // Fabric object events may not have pointer, get from canvas
+            const canvasPointer = canvas.getViewportPoint(e.e)
+            pointer = { x: canvasPointer.x, y: canvasPointer.y }
+          }
+          if (!pointer) return
+
+          // Position indicator exactly at mouse pointer
+          indicator.set({
+            left: pointer.x,
+            top: pointer.y,
+            visible: true,
+          })
+          indicator.setCoords()
+        }
+
+        gp.on("mouseover", () => {
+          state.isHovering = true
+          createHoverIndicator()
+          startBreathingAnimation()
+          canvas.requestRenderAll()
+        })
+
+        gp.on("mousemove", (e) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          updateHoverIndicatorPosition(e as any)
+          canvas.requestRenderAll()
+        })
+
+        gp.on("mouseout", () => {
+          state.isHovering = false
+          stopBreathingAnimation()
+          // Keep ghost path visible with highlight color (don't hide it)
+          gp.set({ stroke: state.highlightColor, opacity: 1 })
+          canvas.requestRenderAll()
+        })
+
+        gp.on("mousedown", (e) => {
+          // Keep animation running while clicking on the path
+          // Don't call discardActiveObject() as it triggers mouseout
+          console.log("Ghost path clicked")
+          // Restart animation if it stopped
+          if (state.isHovering && state.breathingAnimationId === null) {
+            startBreathingAnimation()
+          }
+          // Update indicator position on click too
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          updateHoverIndicatorPosition(e as any)
+          canvas.requestRenderAll()
+        })
+
+        // Cleanup function for when editing ends
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(gp as any)._cleanupBreathing = () => {
+          stopBreathingAnimation()
+          if (state.hoverIndicator) {
+            canvas.remove(state.hoverIndicator)
+            state.hoverIndicator = null
+          }
         }
       }
+
+      // Store the bind function on pathObj for use in recreateGhostPath
+      pathAny._bindGhostPathEvents = bindGhostPathEvents
+
+      // Bind events to initial ghost path
+      bindGhostPathEvents(ghostPath)
 
       // 4. Sync prop changes (e.g. from panel) to Ghost Path
       // This function syncs ghost path AND refreshes control point positions
@@ -1889,15 +1906,12 @@ export default function FabricCanvas() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(newGhost as any).customPathData = (pathObj as any).customPathData
 
-      // Re-attach event listener
-      newGhost.on("mousedown", () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pObj = pathObj as any
-        console.group("Ghost Path Clicked")
-        console.log("Original Custom Data:", pObj.customPathData)
-        console.log("SVG Path Commands:", pObj.path)
-        console.groupEnd()
-      })
+      // Re-attach all event listeners including hover/breathing animation
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pathAny = pathObj as any
+      if (pathAny._bindGhostPathEvents) {
+        pathAny._bindGhostPathEvents(newGhost)
+      }
 
       // Add new ghost to canvas
       canvas.add(newGhost)
