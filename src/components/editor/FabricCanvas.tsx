@@ -1036,6 +1036,7 @@ export default function FabricCanvas() {
       const highlightColor = "#4f46e5"
       let breathingAnimationId: number | null = null
       let hoverIndicator: Circle | null = null
+      let isHovering = false // Track hover state to prevent mousedown from stopping animation
 
       // Create hover indicator circle (hollow)
       const createHoverIndicator = () => {
@@ -1114,124 +1115,36 @@ export default function FabricCanvas() {
         canvas.requestRenderAll()
       }
 
-      // Find closest point on path to mouse position
-      const updateHoverIndicatorPosition = (e: { pointer?: Point }) => {
-        if (!e.pointer || !hoverIndicator) return
+      // Update hover indicator to follow mouse pointer exactly
+      const updateHoverIndicatorPosition = (e: {
+        pointer?: Point
+        e?: MouseEvent
+      }) => {
+        if (!hoverIndicator) return
 
         const indicator = hoverIndicator
-        const pointer = e.pointer
-
-        // Get path bounding box and transform
-        const matrix = ghostPath.calcTransformMatrix()
-        const pathOffset = ghostPath.pathOffset || { x: 0, y: 0 }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pathCommands = ghostPath.path as any[]
-
-        // Find closest point on path segments
-        let closestPoint = { x: pointer.x, y: pointer.y }
-        let minDist = Infinity
-
-        for (let i = 0; i < pathCommands.length; i++) {
-          const cmd = pathCommands[i]
-          if (!cmd) continue
-
-          let pointX: number | undefined
-          let pointY: number | undefined
-
-          if (cmd[0] === "M" || cmd[0] === "L") {
-            pointX = cmd[1] as number
-            pointY = cmd[2] as number
-          } else if (cmd[0] === "C") {
-            // For curves, sample points along the curve
-            pointX = cmd[5] as number
-            pointY = cmd[6] as number
-          }
-
-          if (pointX !== undefined && pointY !== undefined) {
-            // Transform to world coordinates
-            const localX = pointX - pathOffset.x
-            const localY = pointY - pathOffset.y
-            const worldPt = new Point(localX, localY).transform(matrix)
-
-            const dist = Math.hypot(
-              worldPt.x - pointer.x,
-              worldPt.y - pointer.y
-            )
-            if (dist < minDist) {
-              minDist = dist
-              closestPoint = { x: worldPt.x, y: worldPt.y }
-            }
-          }
-
-          // Sample intermediate points for curves
-          if (cmd[0] === "C" && i > 0) {
-            const prevCmd = pathCommands[i - 1]
-            if (!prevCmd) continue
-            const startX =
-              prevCmd[0] === "M" || prevCmd[0] === "L"
-                ? (prevCmd[1] as number)
-                : prevCmd[0] === "C"
-                  ? (prevCmd[5] as number)
-                  : 0
-            const startY =
-              prevCmd[0] === "M" || prevCmd[0] === "L"
-                ? (prevCmd[2] as number)
-                : prevCmd[0] === "C"
-                  ? (prevCmd[6] as number)
-                  : 0
-
-            // Sample 10 points along the bezier curve
-            for (let t = 0.1; t < 1; t += 0.1) {
-              const cp1x = cmd[1] as number
-              const cp1y = cmd[2] as number
-              const cp2x = cmd[3] as number
-              const cp2y = cmd[4] as number
-              const endX = cmd[5] as number
-              const endY = cmd[6] as number
-
-              // Cubic bezier formula
-              const mt = 1 - t
-              const px =
-                mt * mt * mt * startX +
-                3 * mt * mt * t * cp1x +
-                3 * mt * t * t * cp2x +
-                t * t * t * endX
-              const py =
-                mt * mt * mt * startY +
-                3 * mt * mt * t * cp1y +
-                3 * mt * t * t * cp2y +
-                t * t * t * endY
-
-              const localPx = px - pathOffset.x
-              const localPy = py - pathOffset.y
-              const worldPt = new Point(localPx, localPy).transform(matrix)
-
-              const dist = Math.hypot(
-                worldPt.x - pointer.x,
-                worldPt.y - pointer.y
-              )
-              if (dist < minDist) {
-                minDist = dist
-                closestPoint = { x: worldPt.x, y: worldPt.y }
-              }
-            }
-          }
+        // Get pointer position from event
+        let pointer: { x: number; y: number } | null = null
+        if (e.pointer) {
+          pointer = e.pointer
+        } else if (e.e && canvas) {
+          // Fabric object events may not have pointer, get from canvas
+          const canvasPointer = canvas.getViewportPoint(e.e)
+          pointer = { x: canvasPointer.x, y: canvasPointer.y }
         }
+        if (!pointer) return
 
-        // Update indicator position
+        // Position indicator exactly at mouse pointer
         indicator.set({
-          left: closestPoint.x,
-          top: closestPoint.y,
+          left: pointer.x,
+          top: pointer.y,
           visible: true,
         })
         indicator.setCoords()
       }
 
       ghostPath.on("mouseover", () => {
-        ghostPath.set({
-          stroke: highlightColor,
-          strokeWidth: pathObj.strokeWidth || 1,
-        })
+        isHovering = true
         createHoverIndicator()
         startBreathingAnimation()
         canvas.requestRenderAll()
@@ -1244,15 +1157,24 @@ export default function FabricCanvas() {
       })
 
       ghostPath.on("mouseout", () => {
+        isHovering = false
         stopBreathingAnimation()
-        ghostPath.set({ stroke: "rgba(0,0,0,0.01)" })
+        // Keep ghost path visible with highlight color (don't hide it)
+        ghostPath.set({ stroke: highlightColor, opacity: 1 })
         canvas.requestRenderAll()
       })
 
-      ghostPath.on("mousedown", () => {
-        // Clicking line just ensures we don't accidentally select something else
-        console.log("Path Data:", JSON.parse(JSON.stringify(pathObj.path)))
-        canvas.discardActiveObject()
+      ghostPath.on("mousedown", (e) => {
+        // Keep animation running while clicking on the path
+        // Don't call discardActiveObject() as it triggers mouseout
+        console.log("Ghost path clicked")
+        // Restart animation if it stopped
+        if (isHovering && breathingAnimationId === null) {
+          startBreathingAnimation()
+        }
+        // Update indicator position on click too
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updateHoverIndicatorPosition(e as any)
         canvas.requestRenderAll()
       })
 
@@ -1267,12 +1189,70 @@ export default function FabricCanvas() {
       }
 
       // 4. Sync prop changes (e.g. from panel) to Ghost Path
-      const syncProps = () => {
-        // Only need to sync dimensions/strokeWidth. Path data handled by updatePath.
+      // This function syncs ghost path AND refreshes control point positions
+      const syncPropsAndControls = () => {
+        // Sync strokeWidth to ghost path
         ghostPath.set({ strokeWidth: pathObj.strokeWidth || 1 })
+
+        // CRITICAL: Also update control point positions
+        // When strokeWidth changes, the path's transform matrix might change
+        // So we need to recalculate anchor positions
+        const matrix = pathObj.calcTransformMatrix()
+        const transformPoint = (x: number, y: number) => {
+          const offset = pathObj.pathOffset || { x: 0, y: 0 }
+          const localX = x - offset.x
+          const localY = y - offset.y
+          return new Point(localX, localY).transform(matrix)
+        }
+
+        // Update all control point positions based on current node data
+        const pathWithData = pathObj as EditablePath & {
+          customPathData?: CustomPathData
+        }
+        if (pathWithData.customPathData) {
+          const { nodes } = pathWithData.customPathData
+          const controls = controlsRef.current as ControlPoint[]
+
+          controls.forEach((ctrl) => {
+            const data = ctrl.data
+            if (!data) return
+
+            const node = nodes[data.nodeIndex]
+            if (!node) return
+
+            if (data.type === "anchor") {
+              const p = transformPoint(node.anchor.x, node.anchor.y)
+              ctrl.set({ left: p.x, top: p.y })
+              ctrl.setCoords()
+            } else if (data.type === "handle_in" && node.mode === "mirrored") {
+              const p = transformPoint(
+                node.anchor.x + node.handleIn.x,
+                node.anchor.y + node.handleIn.y
+              )
+              ctrl.set({ left: p.x, top: p.y })
+              ctrl.setCoords()
+            } else if (data.type === "handle_out" && node.mode === "mirrored") {
+              const p = transformPoint(
+                node.anchor.x + node.handleOut.x,
+                node.anchor.y + node.handleOut.y
+              )
+              ctrl.set({ left: p.x, top: p.y })
+              ctrl.setCoords()
+            }
+          })
+
+          // Also refresh control lines
+          refreshControlLines()
+        }
+
+        // Recreate ghost path to ensure proper alignment
+        recreateGhostPath()
+
         canvas.requestRenderAll()
       }
-      pathObj.on("modified", syncProps)
+
+      // Listen to both path-specific and canvas-level events
+      pathObj.on("modified", syncPropsAndControls)
 
       canvas.requestRenderAll()
 
@@ -2319,7 +2299,77 @@ export default function FabricCanvas() {
       }
     }
 
+    // 处理属性面板修改（如 strokeWidth）时的同步
+    const handleObjectModified = (e: { target?: FabricObject }) => {
+      if (!e.target || e.target.type !== "path") return
+
+      // 如果当前正在编辑这个路径，同步 ghost path 和控制点
+      if (editingPathRef.current === e.target) {
+        const pathObj = editingPathRef.current as EditablePath
+        const ghostPath = pathObj._ghostPath
+
+        if (ghostPath) {
+          // Sync strokeWidth to ghost path
+          ghostPath.set({ strokeWidth: pathObj.strokeWidth || 1 })
+
+          // Recreate ghost path with proper position alignment
+          recreateGhostPath()
+        }
+
+        // Update control point positions
+        const matrix = pathObj.calcTransformMatrix()
+        const transformPoint = (x: number, y: number) => {
+          const offset = pathObj.pathOffset || { x: 0, y: 0 }
+          const localX = x - offset.x
+          const localY = y - offset.y
+          return new Point(localX, localY).transform(matrix)
+        }
+
+        const pathWithData = pathObj as EditablePath & {
+          customPathData?: CustomPathData
+        }
+        if (pathWithData.customPathData) {
+          const { nodes } = pathWithData.customPathData
+          const controls = controlsRef.current as ControlPoint[]
+
+          controls.forEach((ctrl) => {
+            const data = ctrl.data
+            if (!data) return
+
+            const node = nodes[data.nodeIndex]
+            if (!node) return
+
+            if (data.type === "anchor") {
+              const p = transformPoint(node.anchor.x, node.anchor.y)
+              ctrl.set({ left: p.x, top: p.y })
+              ctrl.setCoords()
+            } else if (data.type === "handle_in" && node.mode === "mirrored") {
+              const p = transformPoint(
+                node.anchor.x + node.handleIn.x,
+                node.anchor.y + node.handleIn.y
+              )
+              ctrl.set({ left: p.x, top: p.y })
+              ctrl.setCoords()
+            } else if (data.type === "handle_out" && node.mode === "mirrored") {
+              const p = transformPoint(
+                node.anchor.x + node.handleOut.x,
+                node.anchor.y + node.handleOut.y
+              )
+              ctrl.set({ left: p.x, top: p.y })
+              ctrl.setCoords()
+            }
+          })
+
+          // Refresh control lines
+          refreshControlLines()
+        }
+
+        canvas.requestRenderAll()
+      }
+    }
+
     canvas.on("node:mode:change", handleNodeModeChange)
+    canvas.on("object:modified", handleObjectModified)
     canvas.on("selection:created", handleSelection)
     canvas.on("selection:updated", handleSelection)
     canvas.on("selection:cleared", handleSelection)
@@ -2336,6 +2386,7 @@ export default function FabricCanvas() {
       canvas.off("mouse:up", handleGlobalMouseUp)
       canvas.off("object:moving", handleObjectMoving)
       canvas.off("node:mode:change", handleNodeModeChange)
+      canvas.off("object:modified", handleObjectModified)
       canvas.off("selection:created", handleSelection)
       canvas.off("selection:updated", handleSelection)
       canvas.off("selection:cleared", handleSelection)
