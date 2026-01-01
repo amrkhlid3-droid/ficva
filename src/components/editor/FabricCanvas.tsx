@@ -624,7 +624,13 @@ export default function FabricCanvas() {
       if (editingPathRef.current) {
         const pathObj = editingPathRef.current as EditablePath
         const ghostPath = pathObj._ghostPath
-        if (ghostPath) canvas.remove(ghostPath)
+        if (ghostPath) {
+          // Call breathing animation cleanup before removing ghost path
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cleanup = (ghostPath as any)._cleanupBreathing
+          if (typeof cleanup === "function") cleanup()
+          canvas.remove(ghostPath)
+        }
       }
     }
 
@@ -1026,20 +1032,221 @@ export default function FabricCanvas() {
 
       canvas.discardActiveObject() // Deselect everything
 
-      // 3. Hover Logic on Ghost Path
+      // 3. Hover Logic on Ghost Path with Breathing Animation
       const highlightColor = "#4f46e5"
+      let breathingAnimationId: number | null = null
+      let hoverIndicator: Circle | null = null
+
+      // Create hover indicator circle (hollow)
+      const createHoverIndicator = () => {
+        if (hoverIndicator) return hoverIndicator
+        hoverIndicator = new Circle({
+          radius: 6,
+          fill: "transparent",
+          stroke: highlightColor,
+          strokeWidth: 2,
+          originX: "center",
+          originY: "center",
+          selectable: false,
+          evented: false,
+          excludeFromExport: true,
+          visible: false,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+        canvas.add(hoverIndicator)
+        return hoverIndicator
+      }
+
+      // Breathing animation function
+      const startBreathingAnimation = () => {
+        if (breathingAnimationId !== null) return
+
+        let opacity = 1
+        let increasing = false
+        const minOpacity = 0.3
+        const maxOpacity = 1
+        const step = 0.03
+
+        const animate = () => {
+          if (!ghostPath || !canvas) return
+
+          // Update opacity
+          if (increasing) {
+            opacity += step
+            if (opacity >= maxOpacity) {
+              opacity = maxOpacity
+              increasing = false
+            }
+          } else {
+            opacity -= step
+            if (opacity <= minOpacity) {
+              opacity = minOpacity
+              increasing = true
+            }
+          }
+
+          // Apply breathing effect to ghost path
+          ghostPath.set({ opacity })
+
+          // Apply to hover indicator if visible
+          if (hoverIndicator && hoverIndicator.visible) {
+            hoverIndicator.set({ opacity })
+          }
+
+          canvas.requestRenderAll()
+          breathingAnimationId = requestAnimationFrame(animate)
+        }
+
+        breathingAnimationId = requestAnimationFrame(animate)
+      }
+
+      // Stop breathing animation
+      const stopBreathingAnimation = () => {
+        if (breathingAnimationId !== null) {
+          cancelAnimationFrame(breathingAnimationId)
+          breathingAnimationId = null
+        }
+        // Reset opacity
+        ghostPath.set({ opacity: 1 })
+        if (hoverIndicator) {
+          hoverIndicator.set({ visible: false, opacity: 1 })
+        }
+        canvas.requestRenderAll()
+      }
+
+      // Find closest point on path to mouse position
+      const updateHoverIndicatorPosition = (e: { pointer?: Point }) => {
+        if (!e.pointer || !hoverIndicator) return
+
+        const indicator = hoverIndicator
+        const pointer = e.pointer
+
+        // Get path bounding box and transform
+        const matrix = ghostPath.calcTransformMatrix()
+        const pathOffset = ghostPath.pathOffset || { x: 0, y: 0 }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pathCommands = ghostPath.path as any[]
+
+        // Find closest point on path segments
+        let closestPoint = { x: pointer.x, y: pointer.y }
+        let minDist = Infinity
+
+        for (let i = 0; i < pathCommands.length; i++) {
+          const cmd = pathCommands[i]
+          if (!cmd) continue
+
+          let pointX: number | undefined
+          let pointY: number | undefined
+
+          if (cmd[0] === "M" || cmd[0] === "L") {
+            pointX = cmd[1] as number
+            pointY = cmd[2] as number
+          } else if (cmd[0] === "C") {
+            // For curves, sample points along the curve
+            pointX = cmd[5] as number
+            pointY = cmd[6] as number
+          }
+
+          if (pointX !== undefined && pointY !== undefined) {
+            // Transform to world coordinates
+            const localX = pointX - pathOffset.x
+            const localY = pointY - pathOffset.y
+            const worldPt = new Point(localX, localY).transform(matrix)
+
+            const dist = Math.hypot(
+              worldPt.x - pointer.x,
+              worldPt.y - pointer.y
+            )
+            if (dist < minDist) {
+              minDist = dist
+              closestPoint = { x: worldPt.x, y: worldPt.y }
+            }
+          }
+
+          // Sample intermediate points for curves
+          if (cmd[0] === "C" && i > 0) {
+            const prevCmd = pathCommands[i - 1]
+            if (!prevCmd) continue
+            const startX =
+              prevCmd[0] === "M" || prevCmd[0] === "L"
+                ? (prevCmd[1] as number)
+                : prevCmd[0] === "C"
+                  ? (prevCmd[5] as number)
+                  : 0
+            const startY =
+              prevCmd[0] === "M" || prevCmd[0] === "L"
+                ? (prevCmd[2] as number)
+                : prevCmd[0] === "C"
+                  ? (prevCmd[6] as number)
+                  : 0
+
+            // Sample 10 points along the bezier curve
+            for (let t = 0.1; t < 1; t += 0.1) {
+              const cp1x = cmd[1] as number
+              const cp1y = cmd[2] as number
+              const cp2x = cmd[3] as number
+              const cp2y = cmd[4] as number
+              const endX = cmd[5] as number
+              const endY = cmd[6] as number
+
+              // Cubic bezier formula
+              const mt = 1 - t
+              const px =
+                mt * mt * mt * startX +
+                3 * mt * mt * t * cp1x +
+                3 * mt * t * t * cp2x +
+                t * t * t * endX
+              const py =
+                mt * mt * mt * startY +
+                3 * mt * mt * t * cp1y +
+                3 * mt * t * t * cp2y +
+                t * t * t * endY
+
+              const localPx = px - pathOffset.x
+              const localPy = py - pathOffset.y
+              const worldPt = new Point(localPx, localPy).transform(matrix)
+
+              const dist = Math.hypot(
+                worldPt.x - pointer.x,
+                worldPt.y - pointer.y
+              )
+              if (dist < minDist) {
+                minDist = dist
+                closestPoint = { x: worldPt.x, y: worldPt.y }
+              }
+            }
+          }
+        }
+
+        // Update indicator position
+        indicator.set({
+          left: closestPoint.x,
+          top: closestPoint.y,
+          visible: true,
+        })
+        indicator.setCoords()
+      }
 
       ghostPath.on("mouseover", () => {
         ghostPath.set({
           stroke: highlightColor,
-          strokeWidth: pathObj.strokeWidth || 1, // Match original width
+          strokeWidth: pathObj.strokeWidth || 1,
         })
+        createHoverIndicator()
+        startBreathingAnimation()
+        canvas.requestRenderAll()
+      })
+
+      ghostPath.on("mousemove", (e) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updateHoverIndicatorPosition(e as any)
         canvas.requestRenderAll()
       })
 
       ghostPath.on("mouseout", () => {
-        // ghostPath.set({ stroke: "rgba(0,0,0,0.01)" }) // DISABLED FOR DEBUGGING
-        // canvas.requestRenderAll()
+        stopBreathingAnimation()
+        ghostPath.set({ stroke: "rgba(0,0,0,0.01)" })
+        canvas.requestRenderAll()
       })
 
       ghostPath.on("mousedown", () => {
@@ -1048,6 +1255,16 @@ export default function FabricCanvas() {
         canvas.discardActiveObject()
         canvas.requestRenderAll()
       })
+
+      // Cleanup function for when editing ends
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(ghostPath as any)._cleanupBreathing = () => {
+        stopBreathingAnimation()
+        if (hoverIndicator) {
+          canvas.remove(hoverIndicator)
+          hoverIndicator = null
+        }
+      }
 
       // 4. Sync prop changes (e.g. from panel) to Ghost Path
       const syncProps = () => {
