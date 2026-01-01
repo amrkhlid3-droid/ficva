@@ -21,6 +21,14 @@ export default function ContextMenu() {
       const e = opt.e as MouseEvent
       e.preventDefault()
 
+      // Don't show context menu in edit mode
+      const { editingPath } = useEditorStore.getState()
+      if (editingPath) {
+        setHasTarget(false)
+        setPosition(null)
+        return
+      }
+
       const target = opt.target
 
       if (target) {
