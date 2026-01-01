@@ -267,6 +267,10 @@ export function findClosestSegment(
 /**
  * 在指定线段的 t 位置插入新节点
  * 使用 De Casteljau 细分保持曲线形状
+ *
+ * 注意：
+ * - 对于 mirrored 模式的新节点，手柄会被调整为对称（长度取平均）
+ * - 相邻节点的手柄只在该节点也是 mirrored 模式时才会被更新
  */
 export function insertNodeAtSegment(
   nodes: PathNode[],
@@ -296,44 +300,62 @@ export function insertNodeAtSegment(
   // 使用 De Casteljau 细分曲线
   const subdivision = subdivideCubicBezier(p0, p1, p2, p3, t)
 
-  // 更新当前节点的 handleOut（左半部分的 p1 相对于 p0）
-  const newCurrHandleOut = {
-    x: subdivision.left.p1.x - p0.x,
-    y: subdivision.left.p1.y - p0.y,
-  }
-
-  // 创建新节点
+  // 新锚点位置
   const newAnchor = subdivision.left.p3 // = subdivision.right.p0，细分点
 
-  // 新节点的 handleIn（左半部分的 p2 相对于新锚点）
-  const newHandleIn = {
+  // De Casteljau 计算的原始手柄（保持曲线形状）
+  const rawHandleIn = {
     x: subdivision.left.p2.x - newAnchor.x,
     y: subdivision.left.p2.y - newAnchor.y,
   }
-
-  // 新节点的 handleOut（右半部分的 p1 相对于新锚点）
-  const newHandleOut = {
+  const rawHandleOut = {
     x: subdivision.right.p1.x - newAnchor.x,
     y: subdivision.right.p1.y - newAnchor.y,
   }
 
-  // 更新下一个节点的 handleIn（右半部分的 p2 相对于 p3）
+  // 更新相邻节点的手柄（De Casteljau 计算值）
+  const newCurrHandleOut = {
+    x: subdivision.left.p1.x - p0.x,
+    y: subdivision.left.p1.y - p0.y,
+  }
   const newNextHandleIn = {
     x: subdivision.right.p2.x - p3.x,
     y: subdivision.right.p2.y - p3.y,
   }
 
-  // 如果是直线模式，清零所有手柄
-  let finalHandleIn = newHandleIn
-  let finalHandleOut = newHandleOut
-  let finalCurrHandleOut = newCurrHandleOut
-  let finalNextHandleIn = newNextHandleIn
+  let finalHandleIn: { x: number; y: number }
+  let finalHandleOut: { x: number; y: number }
 
   if (mode === "straight") {
+    // 直线模式：所有手柄清零
     finalHandleIn = { x: 0, y: 0 }
     finalHandleOut = { x: 0, y: 0 }
-    finalCurrHandleOut = { x: 0, y: 0 }
-    finalNextHandleIn = { x: 0, y: 0 }
+  } else {
+    // mirrored 模式：手柄需要对称
+    // 计算两个手柄的平均长度
+    const lenIn = Math.sqrt(rawHandleIn.x ** 2 + rawHandleIn.y ** 2)
+    const lenOut = Math.sqrt(rawHandleOut.x ** 2 + rawHandleOut.y ** 2)
+    const avgLen = (lenIn + lenOut) / 2
+
+    // 使用 handleOut 的方向作为基准（因为它指向前进方向）
+    // handleIn 应该是 handleOut 的相反方向
+    if (lenOut > 0.001) {
+      // 使用 handleOut 方向
+      const dirX = rawHandleOut.x / lenOut
+      const dirY = rawHandleOut.y / lenOut
+      finalHandleOut = { x: dirX * avgLen, y: dirY * avgLen }
+      finalHandleIn = { x: -dirX * avgLen, y: -dirY * avgLen }
+    } else if (lenIn > 0.001) {
+      // 使用 handleIn 方向的相反方向
+      const dirX = -rawHandleIn.x / lenIn
+      const dirY = -rawHandleIn.y / lenIn
+      finalHandleOut = { x: dirX * avgLen, y: dirY * avgLen }
+      finalHandleIn = { x: -dirX * avgLen, y: -dirY * avgLen }
+    } else {
+      // 两个手柄都很小，保持为零
+      finalHandleIn = { x: 0, y: 0 }
+      finalHandleOut = { x: 0, y: 0 }
+    }
   }
 
   // 创建新节点
@@ -344,16 +366,60 @@ export function insertNodeAtSegment(
     mode,
   }
 
-  // 更新当前节点
-  newNodes[segmentIndex] = {
-    ...curr,
-    handleOut: finalCurrHandleOut,
+  // 更新当前节点的 handleOut（只有 mirrored 模式才更新）
+  if (curr.mode === "mirrored") {
+    // mirrored 模式：更新 handleOut，并镜像更新 handleIn
+    const newLen = Math.sqrt(newCurrHandleOut.x ** 2 + newCurrHandleOut.y ** 2)
+    const oldInLen = Math.sqrt(curr.handleIn.x ** 2 + curr.handleIn.y ** 2)
+
+    if (newLen > 0.001) {
+      const dirX = newCurrHandleOut.x / newLen
+      const dirY = newCurrHandleOut.y / newLen
+      newNodes[segmentIndex] = {
+        ...curr,
+        handleOut: newCurrHandleOut,
+        handleIn: { x: -dirX * oldInLen, y: -dirY * oldInLen },
+      }
+    } else {
+      newNodes[segmentIndex] = {
+        ...curr,
+        handleOut: newCurrHandleOut,
+      }
+    }
+  } else {
+    // straight 模式：只更新 handleOut，不影响 handleIn
+    newNodes[segmentIndex] = {
+      ...curr,
+      handleOut: newCurrHandleOut,
+    }
   }
 
-  // 更新下一个节点
-  newNodes[nextIndex] = {
-    ...next,
-    handleIn: finalNextHandleIn,
+  // 更新下一个节点的 handleIn（只有 mirrored 模式才更新）
+  if (next.mode === "mirrored") {
+    // mirrored 模式：更新 handleIn，并镜像更新 handleOut
+    const newLen = Math.sqrt(newNextHandleIn.x ** 2 + newNextHandleIn.y ** 2)
+    const oldOutLen = Math.sqrt(next.handleOut.x ** 2 + next.handleOut.y ** 2)
+
+    if (newLen > 0.001) {
+      const dirX = newNextHandleIn.x / newLen
+      const dirY = newNextHandleIn.y / newLen
+      newNodes[nextIndex] = {
+        ...next,
+        handleIn: newNextHandleIn,
+        handleOut: { x: -dirX * oldOutLen, y: -dirY * oldOutLen },
+      }
+    } else {
+      newNodes[nextIndex] = {
+        ...next,
+        handleIn: newNextHandleIn,
+      }
+    }
+  } else {
+    // straight 模式：只更新 handleIn，不影响 handleOut
+    newNodes[nextIndex] = {
+      ...next,
+      handleIn: newNextHandleIn,
+    }
   }
 
   // 在正确位置插入新节点
