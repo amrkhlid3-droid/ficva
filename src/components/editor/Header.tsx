@@ -10,9 +10,18 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 import { Logo } from "@/components/Logo"
 
 export default function Header() {
-  const { history, canUndo, canRedo, projectName, setProjectName } =
-    useEditorStore()
+  const {
+    history,
+    canUndo,
+    canRedo,
+    projectName,
+    setProjectName,
+    editingPath,
+  } = useEditorStore()
   const canvas = useEditorStore((state) => state.canvas)
+
+  // Disable undo/redo when in path edit mode
+  const isInEditMode = !!editingPath
 
   const handleExport = () => {
     if (!canvas) return
@@ -62,17 +71,19 @@ export default function Header() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => history.undo()}
-            disabled={!canUndo}
+            disabled={!canUndo || isInEditMode}
             className="rounded p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-            title="Undo (Ctrl+Z)"
+            title={isInEditMode ? "Exit edit mode to undo" : "Undo (Ctrl+Z)"}
           >
             <Undo2 className="h-4 w-4" />
           </button>
           <button
             onClick={() => history.redo()}
-            disabled={!canRedo}
+            disabled={!canRedo || isInEditMode}
             className="rounded p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-            title="Redo (Ctrl+Shift+Z)"
+            title={
+              isInEditMode ? "Exit edit mode to redo" : "Redo (Ctrl+Shift+Z)"
+            }
           >
             <Redo2 className="h-4 w-4" />
           </button>

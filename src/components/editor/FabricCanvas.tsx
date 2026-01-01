@@ -7,7 +7,6 @@ import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
 import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObjectsCommand"
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
-import { ModifyPathCommand } from "@/lib/editor/history/commands/ModifyPathCommand"
 import type { NodeMode, CustomPathData } from "@/types/fabric"
 import { svgPathToNodes } from "@/lib/editor/pathConverter"
 import { nodesToSvgPath } from "@/lib/editor/pathUtils"
@@ -124,6 +123,14 @@ export default function FabricCanvas() {
       const target = e.target
       if (!target || !dragStartRef.current) return
 
+      // Skip control points and ghost paths (edit mode internal objects)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const targetAny = target as any
+      if (targetAny.excludeFromExport || targetAny.isGhost || targetAny.data) {
+        dragStartRef.current = null
+        return
+      }
+
       const originalState = dragStartRef.current
       const newState = {
         left: target.left,
@@ -214,6 +221,10 @@ export default function FabricCanvas() {
 
       if (isCtrlOrMeta && e.key === "z") {
         e.preventDefault()
+        // Disable undo/redo in edit mode - operations are tracked as single command on exit
+        const { editingPath } = useEditorStore.getState()
+        if (editingPath) return
+
         if (e.shiftKey) {
           history.redo()
         } else {
@@ -608,10 +619,11 @@ export default function FabricCanvas() {
   const editingPathRef = useRef<Path | null>(null)
   const controlsRef = useRef<FabricObject[]>([])
   const clearControlsRef = useRef<(() => void) | null>(null)
-  // 用于历史记录：存储拖拽开始时的节点快照
-  const dragStartNodesRef = useRef<import("@/types/fabric").PathNode[] | null>(
-    null
-  )
+  // 用于历史记录：存储进入编辑模式时的节点快照（用于退出时创建单一历史命令）
+  const editModeEntryNodesRef = useRef<{
+    nodes: import("@/types/fabric").PathNode[]
+    closed: boolean
+  } | null>(null)
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
@@ -650,6 +662,10 @@ export default function FabricCanvas() {
           obj.evented = true
         }
       })
+
+      // Edit mode operations are NOT tracked in history
+      // Clear entry snapshot without creating any history command
+      editModeEntryNodesRef.current = null
 
       if (editingPathRef.current) {
         const oldPath = editingPathRef.current as EditablePath
@@ -920,6 +936,15 @@ export default function FabricCanvas() {
       useEditorStore.getState().setEditingPath(pathObj)
 
       editingPathRef.current = pathObj
+
+      // Save entry snapshot for history (only on fresh entry, not refresh)
+      if (!editModeEntryNodesRef.current && pathWithData.customPathData) {
+        editModeEntryNodesRef.current = {
+          nodes: JSON.parse(JSON.stringify(pathWithData.customPathData.nodes)),
+          closed: pathWithData.customPathData.closed,
+        }
+        console.log("[Edit Mode] Entry snapshot saved")
+      }
 
       // 1. Disable interaction on the main path (so mouse ignores fill)
       pathObj.selectable = false
@@ -1564,25 +1589,10 @@ export default function FabricCanvas() {
       }
     }
 
-    const handleMouseDown = (e: { target?: FabricObject }) => {
+    const handleMouseDown = () => {
       // Note: Single-click on blank space no longer exits edit mode
       // Use double-click to exit edit mode instead
-
-      // 如果在编辑模式下点击控制点，保存当前节点状态用于历史记录
-      if (editingPathRef.current && e.target) {
-        const target = e.target as ControlPoint
-        if (target.data) {
-          const pathObj = editingPathRef.current as EditablePath & {
-            customPathData?: CustomPathData
-          }
-          if (pathObj.customPathData) {
-            // 深拷贝当前节点状态作为拖拽前快照
-            dragStartNodesRef.current = JSON.parse(
-              JSON.stringify(pathObj.customPathData.nodes)
-            )
-          }
-        }
-      }
+      // Edit mode operations are tracked as a single undo step when exiting
     }
 
     const handleObjectMoving = (e: { target: FabricObject }) => {
@@ -1878,34 +1888,7 @@ export default function FabricCanvas() {
       // Trigger recreation on Mouse Up if we are editing
       if (editingPathRef.current) {
         recreateGhostPath()
-
-        // 创建历史记录命令（如果节点有变化）
-        const pathObj = editingPathRef.current as EditablePath & {
-          customPathData?: CustomPathData
-        }
-        if (dragStartNodesRef.current && pathObj.customPathData) {
-          const oldNodes = dragStartNodesRef.current
-          const newNodes = pathObj.customPathData.nodes
-          const closed = pathObj.customPathData.closed
-
-          // 检查是否有实际变化
-          const hasChanged =
-            JSON.stringify(oldNodes) !== JSON.stringify(newNodes)
-
-          if (hasChanged) {
-            const { history } = useEditorStore.getState()
-            const command = new ModifyPathCommand(
-              editingPathRef.current,
-              oldNodes,
-              newNodes,
-              closed
-            )
-            history.push(command) // 只 push，不 execute（因为已经应用了）
-          }
-
-          // 清除快照
-          dragStartNodesRef.current = null
-        }
+        // Note: History is tracked as a single command when exiting edit mode
       }
     }
 
@@ -2111,10 +2094,8 @@ export default function FabricCanvas() {
 
       console.log(`[Node Mode] Switching node ${nodeIndex} to ${newMode}`)
 
-      // 保存修改前的节点状态（用于历史记录）
-      const oldNodes = JSON.parse(JSON.stringify(pathObj.customPathData.nodes))
-
       // Update Node Mode
+      // Note: History is tracked as a single command when exiting edit mode
       node.mode = newMode
 
       if (newMode === "mirrored") {
@@ -2220,16 +2201,6 @@ export default function FabricCanvas() {
         node.handleIn = { x: 0, y: 0 }
         node.handleOut = { x: 0, y: 0 }
       }
-
-      // 创建历史记录命令
-      const { history } = useEditorStore.getState()
-      const command = new ModifyPathCommand(
-        editingPathRef.current,
-        oldNodes,
-        pathObj.customPathData.nodes,
-        pathObj.customPathData.closed
-      )
-      history.push(command) // 只 push，不 execute（因为已经应用了）
 
       // Regenerate & Refresh
       regeneratePath()
