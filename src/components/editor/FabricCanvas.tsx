@@ -624,6 +624,14 @@ export default function FabricCanvas() {
     nodes: import("@/types/fabric").PathNode[]
     closed: boolean
   } | null>(null)
+  // 用于右键取消：存储拖动开始时的控制点节点状态
+  const controlDragStartRef = useRef<{
+    nodeIndex: number
+    anchor: { x: number; y: number }
+    handleIn: { x: number; y: number }
+    handleOut: { x: number; y: number }
+    type: "anchor" | "handle_in" | "handle_out"
+  } | null>(null)
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
@@ -1589,10 +1597,55 @@ export default function FabricCanvas() {
       }
     }
 
-    const handleMouseDown = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleMouseDown = (e: any) => {
       // Note: Single-click on blank space no longer exits edit mode
       // Use double-click to exit edit mode instead
       // Edit mode operations are tracked as a single undo step when exiting
+
+      if (!editingPathRef.current) return
+
+      const pathObj = editingPathRef.current as EditablePath
+      const pathWithData = pathObj as EditablePath & {
+        customPathData?: CustomPathData
+      }
+      if (!pathWithData.customPathData) return
+
+      const target = e.target as ControlPoint
+      const mouseEvent = e.e as MouseEvent
+
+      // 右键点击：如果正在拖动控制点，恢复原始位置
+      if (mouseEvent.button === 2 && controlDragStartRef.current) {
+        const saved = controlDragStartRef.current
+        const node = pathWithData.customPathData.nodes[saved.nodeIndex]
+        if (node) {
+          // 恢复节点数据
+          node.anchor = { ...saved.anchor }
+          node.handleIn = { ...saved.handleIn }
+          node.handleOut = { ...saved.handleOut }
+
+          // 重新生成路径和刷新控制点
+          regeneratePath()
+          enterEditMode(pathObj)
+        }
+        controlDragStartRef.current = null
+        return
+      }
+
+      // 左键点击控制点：捕获开始状态
+      if (mouseEvent.button === 0 && target?.data) {
+        const nodeIndex = target.data.nodeIndex
+        const node = pathWithData.customPathData.nodes[nodeIndex]
+        if (node) {
+          controlDragStartRef.current = {
+            nodeIndex,
+            type: target.data.type,
+            anchor: { ...node.anchor },
+            handleIn: { ...node.handleIn },
+            handleOut: { ...node.handleOut },
+          }
+        }
+      }
     }
 
     const handleObjectMoving = (e: { target: FabricObject }) => {
@@ -1890,6 +1943,8 @@ export default function FabricCanvas() {
         recreateGhostPath()
         // Note: History is tracked as a single command when exiting edit mode
       }
+      // 清除控制点拖动开始状态
+      controlDragStartRef.current = null
     }
 
     // === OLD LOGIC (DISABLED) ===
