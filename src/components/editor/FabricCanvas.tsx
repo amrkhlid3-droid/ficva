@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Canvas, Circle, FabricObject, Line, Path, Point, util } from "fabric"
 import { useTheme } from "next-themes"
 import { useEditorStore } from "@/store/useEditorStore"
@@ -14,6 +14,7 @@ import {
   findClosestSegment,
   insertNodeAtSegment,
 } from "@/lib/editor/pathUtils"
+import { DeleteNodeDialog } from "./DeleteNodeDialog"
 
 // Restore PathCommand type for legacy support / Fabric compatibility
 type PathCommand = (string | number)[]
@@ -53,6 +54,10 @@ export default function FabricCanvas() {
 
   // Track start state for drag operations
   const dragStartRef = useRef<Partial<FabricObject> | null>(null)
+
+  // Delete node dialog state
+  const [deleteNodeDialogOpen, setDeleteNodeDialogOpen] = useState(false)
+  const pendingDeleteNodeRef = useRef<{ nodeIndex: number } | null>(null)
 
   // Drawing Mode Sync
   const isDrawingMode = useEditorStore((s) => s.isDrawingMode)
@@ -1045,16 +1050,6 @@ export default function FabricCanvas() {
         ghostPath.setCoords()
       }
 
-      // Add Click Listener for Debugging
-      ghostPath.on("mousedown", () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pObj = pathObj as any
-        console.group("Ghost Path Clicked")
-        console.log("Original Custom Data:", pObj.customPathData)
-        console.log("SVG Path Commands:", pObj.path)
-        console.groupEnd()
-      })
-
       console.log(
         "Ghost Path created. Original:",
         pathObj.strokeWidth,
@@ -1079,6 +1074,7 @@ export default function FabricCanvas() {
         hoverIndicator: null as Circle | null,
         isHovering: false,
         highlightColor,
+        lastClickTime: 0, // For double-click detection
       }
 
       // Helper to bind ghost path events (reusable for recreateGhostPath)
@@ -1217,6 +1213,19 @@ export default function FabricCanvas() {
           // Only handle left mouse button clicks
           if (mouseEvent.button !== 0) return
 
+          // Double-click detection (300ms threshold)
+          const now = Date.now()
+          const timeSinceLastClick = now - state.lastClickTime
+          state.lastClickTime = now
+
+          // If not a double-click, just return
+          if (timeSinceLastClick > 300) {
+            return
+          }
+
+          // Reset lastClickTime to prevent triple-click triggering
+          state.lastClickTime = 0
+
           // Get current path object and its data
           const pathObj = editingPathRef.current
           if (!pathObj) return
@@ -1250,7 +1259,7 @@ export default function FabricCanvas() {
           )
 
           if (!result) {
-            console.log("Ghost path clicked but no segment found nearby")
+            console.log("Ghost path double-clicked but no segment found nearby")
             return
           }
 
@@ -2357,6 +2366,16 @@ export default function FabricCanvas() {
       }
     }
 
+    // Handle node:delete event from PropertiesPanel
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleNodeDelete = (e: { target: any }) => {
+      const target = e.target
+      if (target?.data?.type === "anchor") {
+        pendingDeleteNodeRef.current = { nodeIndex: target.data.nodeIndex }
+        setDeleteNodeDialogOpen(true)
+      }
+    }
+
     // HIGHLIGHT SELECTION
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleSelection = (e: any) => {
@@ -2475,6 +2494,7 @@ export default function FabricCanvas() {
     }
 
     canvas.on("node:mode:change", handleNodeModeChange)
+    canvas.on("node:delete", handleNodeDelete)
     canvas.on("object:modified", handleObjectModified)
     canvas.on("selection:created", handleSelection)
     canvas.on("selection:updated", handleSelection)
@@ -2492,6 +2512,7 @@ export default function FabricCanvas() {
       canvas.off("mouse:up", handleGlobalMouseUp)
       canvas.off("object:moving", handleObjectMoving)
       canvas.off("node:mode:change", handleNodeModeChange)
+      canvas.off("node:delete", handleNodeDelete)
       canvas.off("object:modified", handleObjectModified)
       canvas.off("selection:created", handleSelection)
       canvas.off("selection:updated", handleSelection)
@@ -2501,6 +2522,48 @@ export default function FabricCanvas() {
       clearControls()
     }
   }, [activeTool, setCanvas]) // Re-bind if tool changes? Yes, to enable/disable.
+
+  // Handle confirmed node deletion
+  const handleConfirmDeleteNode = () => {
+    const nodeIndex = pendingDeleteNodeRef.current?.nodeIndex
+    if (nodeIndex === undefined) return
+
+    const canvas = useEditorStore.getState().canvas
+    if (!canvas) return
+
+    const pathObj = useEditorStore.getState().editingPath as EditablePath & {
+      customPathData?: CustomPathData
+    }
+    if (!pathObj?.customPathData) return
+
+    const nodes = pathObj.customPathData.nodes
+
+    // Validation: keep at least 2 nodes
+    if (nodes.length <= 2) {
+      console.warn("Cannot delete node: path must have at least 2 nodes")
+      setDeleteNodeDialogOpen(false)
+      pendingDeleteNodeRef.current = null
+      return
+    }
+
+    // Delete the node
+    nodes.splice(nodeIndex, 1)
+
+    // Regenerate path
+    const newCommands = nodesToSvgPath(pathObj.customPathData)
+    pathObj.set({ path: newCommands })
+    pathObj.setCoords()
+    pathObj.dirty = true
+
+    // Re-enter edit mode to refresh controls
+    // We need to access enterEditMode from the useEffect scope
+    // Instead, we fire an event to trigger refresh
+    canvas.fire("path:data:changed", { target: pathObj })
+
+    // Clear dialog state
+    pendingDeleteNodeRef.current = null
+    setDeleteNodeDialogOpen(false)
+  }
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-950">
@@ -2516,6 +2579,12 @@ export default function FabricCanvas() {
       <div className="z-0 border border-zinc-200 shadow-2xl dark:border-zinc-800">
         <canvas ref={canvasEl} />
       </div>
+
+      <DeleteNodeDialog
+        open={deleteNodeDialogOpen}
+        onOpenChange={setDeleteNodeDialogOpen}
+        onConfirm={handleConfirmDeleteNode}
+      />
     </div>
   )
 }
