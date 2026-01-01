@@ -927,9 +927,14 @@ export default function FabricCanvas() {
           }
         }
 
-        // STEP 2: Parse the (now normalized) path
+        // STEP 2: Parse the (now normalized) path, passing nodeModes if available
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        pathWithData.customPathData = svgPathToNodes(pathObj.path as any[])
+        const pathAny = pathObj as any
+        pathWithData.customPathData = svgPathToNodes(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          pathObj.path as any[],
+          pathAny.nodeModes // 传递 Pen Tool 绘制时保存的节点模式
+        )
         console.log(
           "[Node-Centric] Created",
           pathWithData.customPathData.nodes.length,
