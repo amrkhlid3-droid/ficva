@@ -37,10 +37,13 @@ export class ModifyPathCommand implements Command {
   }
 
   execute() {
+    console.log("[ModifyPathCommand] execute() - applying new path data")
     this.applyPathData(this.newPathData, this.newSvgPath)
   }
 
   undo() {
+    console.log("[ModifyPathCommand] undo() - applying old path data")
+    console.log("[ModifyPathCommand] path canvas:", this.path.canvas)
     this.applyPathData(this.oldPathData, this.oldSvgPath)
   }
 
@@ -55,6 +58,10 @@ export class ModifyPathCommand implements Command {
 
     // Update SVG path
     this.path.set({ path: svgPath })
+
+    // 重新计算路径边界和 pathOffset
+    this.path.setBoundingBox()
+
     this.path.setCoords()
     this.path.dirty = true
     this.path.canvas?.requestRenderAll()

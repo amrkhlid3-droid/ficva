@@ -149,7 +149,15 @@ export default function FabricCanvas() {
     })
 
     // Sync layers on modification/add/remove
-    canvas.on("object:added", () => syncLayers(canvas))
+    canvas.on("object:added", (e) => {
+      syncLayers(canvas)
+      // Ensure loaded objects are selectable (fix for objects saved during edit mode)
+      const obj = e.target as EditablePath & ControlPoint
+      if (obj && !obj.isGhost && !obj.excludeFromExport) {
+        obj.selectable = true
+        obj.evented = true
+      }
+    })
     canvas.on("object:removed", () => syncLayers(canvas))
     canvas.on("object:modified", () => syncLayers(canvas))
 
@@ -1914,9 +1922,82 @@ export default function FabricCanvas() {
         const isHandleOutZero = node.handleOut.x === 0 && node.handleOut.y === 0
 
         if (isHandleInZero && isHandleOutZero) {
-          // Both handles are zero: Create default horizontal handles
-          node.handleIn = { x: -30, y: 0 }
-          node.handleOut = { x: 30, y: 0 }
+          // Both handles are zero: Calculate direction based on adjacent nodes
+          const nodes = pathObj.customPathData.nodes
+          const isClosed = pathObj.customPathData.closed
+          const numNodes = nodes.length
+
+          // Get previous and next node indices (handle closed paths)
+          const prevIndex = isClosed
+            ? (nodeIndex - 1 + numNodes) % numNodes
+            : nodeIndex > 0
+              ? nodeIndex - 1
+              : null
+          const nextIndex = isClosed
+            ? (nodeIndex + 1) % numNodes
+            : nodeIndex < numNodes - 1
+              ? nodeIndex + 1
+              : null
+
+          const prevNode = prevIndex !== null ? nodes[prevIndex] : null
+          const nextNode = nextIndex !== null ? nodes[nextIndex] : null
+
+          // Calculate direction vector
+          let dirX = 1,
+            dirY = 0 // Default horizontal
+
+          if (prevNode && nextNode) {
+            // Both neighbors exist: direction from prev to next
+            dirX = nextNode.anchor.x - prevNode.anchor.x
+            dirY = nextNode.anchor.y - prevNode.anchor.y
+          } else if (prevNode) {
+            // Only prev exists: direction from prev to current
+            dirX = node.anchor.x - prevNode.anchor.x
+            dirY = node.anchor.y - prevNode.anchor.y
+          } else if (nextNode) {
+            // Only next exists: direction from current to next
+            dirX = nextNode.anchor.x - node.anchor.x
+            dirY = nextNode.anchor.y - node.anchor.y
+          }
+
+          // Normalize direction
+          const dirLen = Math.sqrt(dirX * dirX + dirY * dirY)
+          if (dirLen > 0.001) {
+            dirX /= dirLen
+            dirY /= dirLen
+          } else {
+            // Fallback to horizontal if points overlap
+            dirX = 1
+            dirY = 0
+          }
+
+          // Calculate handle length based on distance to neighbors (30% of min distance, clamped to [15, 50])
+          let handleLength = 30 // Default
+          const distances: number[] = []
+
+          if (prevNode) {
+            const distPrev = Math.sqrt(
+              (node.anchor.x - prevNode.anchor.x) ** 2 +
+                (node.anchor.y - prevNode.anchor.y) ** 2
+            )
+            distances.push(distPrev)
+          }
+          if (nextNode) {
+            const distNext = Math.sqrt(
+              (node.anchor.x - nextNode.anchor.x) ** 2 +
+                (node.anchor.y - nextNode.anchor.y) ** 2
+            )
+            distances.push(distNext)
+          }
+
+          if (distances.length > 0) {
+            const minDist = Math.min(...distances)
+            handleLength = Math.max(15, Math.min(50, minDist * 0.3))
+          }
+
+          // Generate symmetric handles along the direction
+          node.handleOut = { x: dirX * handleLength, y: dirY * handleLength }
+          node.handleIn = { x: -dirX * handleLength, y: -dirY * handleLength }
         } else {
           // At least one handle exists: Enforce symmetry immediately
           // Choose the longer handle to preserve curve shape

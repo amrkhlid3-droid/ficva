@@ -28,17 +28,35 @@ export class HistoryManager {
   }
 
   push(command: Command) {
+    console.log(
+      "[HistoryManager] push() called, command:",
+      command.constructor.name
+    )
     this.undoStack.push(command)
     this.redoStack = [] // Clear redo on new divergence
+    console.log(
+      "[HistoryManager] undoStack length after push:",
+      this.undoStack.length
+    )
     this.notify()
   }
 
   async undo() {
+    console.log(
+      "[HistoryManager] undo() called, undoStack length:",
+      this.undoStack.length
+    )
     const command = this.undoStack.pop()
     if (command) {
+      console.log(
+        "[HistoryManager] Executing undo on command:",
+        command.constructor.name
+      )
       await command.undo()
       this.redoStack.push(command)
       this.notify()
+    } else {
+      console.log("[HistoryManager] No command to undo")
     }
   }
 
