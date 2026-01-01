@@ -1346,6 +1346,13 @@ export default function FabricCanvas() {
 
     const handleDblClick = (e: { target?: FabricObject }) => {
       if (activeTool !== "select") return
+
+      // Double-click on blank space exits edit mode
+      if (editingPathRef.current && !e.target) {
+        clearControls()
+        return
+      }
+
       if (e.target && e.target.type === "path") {
         // Prevent re-entry if already editing this path (or a replacement of it)
         // Since we recreate paths, checking reference equality might be tricky if user clicks fast.
@@ -1361,11 +1368,8 @@ export default function FabricCanvas() {
     }
 
     const handleMouseDown = (e: { target?: FabricObject }) => {
-      // If clicking blank space, exit edit mode
-      if (editingPathRef.current && !e.target) {
-        clearControls()
-        return
-      }
+      // Note: Single-click on blank space no longer exits edit mode
+      // Use double-click to exit edit mode instead
 
       // 如果在编辑模式下点击控制点，保存当前节点状态用于历史记录
       if (editingPathRef.current && e.target) {
