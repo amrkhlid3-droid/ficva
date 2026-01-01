@@ -1,4 +1,36 @@
-import { Canvas, FabricObject } from "fabric"
+import { Canvas, FabricObject, Path } from "fabric"
+
+/**
+ * 修复加载后的 Path 对象属性
+ * 确保 objectCaching 为 false 和 exactBoundingBox 为 true
+ * 这样可以正确显示 miter 尖角而不被裁剪
+ */
+export const fixPathObjectsAfterLoad = (canvas: Canvas) => {
+  const objects = canvas.getObjects()
+  let fixedCount = 0
+
+  for (const obj of objects) {
+    if (obj instanceof Path) {
+      // 修复 objectCaching 和 exactBoundingBox
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pathObj = obj as any
+      if (
+        pathObj.objectCaching !== false ||
+        pathObj.exactBoundingBox !== true
+      ) {
+        pathObj.objectCaching = false
+        pathObj.exactBoundingBox = true
+        pathObj.setCoords()
+        fixedCount++
+      }
+    }
+  }
+
+  if (fixedCount > 0) {
+    canvas.requestRenderAll()
+    console.log(`[CanvasUtils] Fixed ${fixedCount} Path objects after load`)
+  }
+}
 
 export const safeRemove = (canvas: Canvas, object: FabricObject) => {
   if (!object || !canvas) return

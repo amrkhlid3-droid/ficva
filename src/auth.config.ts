@@ -34,7 +34,20 @@ export const authConfig = {
         return Response.redirect(new URL("/", nextUrl))
       }
       return true
-      return true
+    },
+    jwt({ token, user }) {
+      // When user signs in, add their id to the token
+      if (user) {
+        token.id = user.id
+      }
+      return token
+    },
+    session({ session, token }) {
+      // Add user id from token to session
+      if (token && session.user) {
+        session.user.id = token.id as string
+      }
+      return session
     },
   },
   providers: [], // Add providers with an empty array for now

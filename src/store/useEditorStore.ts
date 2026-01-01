@@ -2,6 +2,7 @@ import { create } from "zustand"
 // Removed immer middleware to handle raw Canvas objects correctly
 import type { Canvas, FabricObject } from "fabric"
 import { HistoryManager } from "@/lib/editor/history/HistoryManager"
+import { fixPathObjectsAfterLoad } from "@/lib/editor/utils/CanvasUtils"
 
 export interface Page {
   id: string
@@ -16,6 +17,7 @@ export interface PenToolConfig {
   strokeDashArray: number[] | null
   strokeLineCap: "butt" | "round" | "square"
   strokeLineJoin: "miter" | "round" | "bevel"
+  strokeMiterLimit: number
 }
 
 interface EditorState {
@@ -37,6 +39,15 @@ interface EditorState {
   penToolConfig: PenToolConfig
 
   editingPath: FabricObject | null
+
+  // Zoom State
+  zoom: number // Current zoom level (0.1 to 5.0, representing 10% to 500%)
+  zoomMode: "fit" | "custom" // "fit" = auto-fit to container, "custom" = user-defined
+  canvasContainerSize: { width: number; height: number } | null // Container dimensions for zoom calculations
+
+  // Pan State
+  isPanning: boolean // Whether middle-mouse drag is active
+  scrollPosition: { x: number; y: number } // Current scroll position
 }
 
 interface EditorActions {
@@ -66,6 +77,19 @@ interface EditorActions {
   toggleDrawingMode: (enabled?: boolean) => void
   setBrushColor: (color: string) => void
   setBrushWidth: (width: number) => void
+
+  // Zoom Actions
+  setZoom: (zoom: number) => void
+  setZoomMode: (mode: "fit" | "custom") => void
+  setCanvasContainerSize: (size: { width: number; height: number }) => void
+  zoomIn: () => void
+  zoomOut: () => void
+  zoomToFit: () => void
+  applyZoom: (zoom: number) => void
+
+  // Pan Actions
+  setIsPanning: (isPanning: boolean) => void
+  setScrollPosition: (position: { x: number; y: number }) => void
 }
 
 const historyManager = new HistoryManager()
@@ -98,8 +122,18 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       strokeWidth: 2,
       strokeDashArray: null,
       strokeLineCap: "round",
-      strokeLineJoin: "round",
+      strokeLineJoin: "miter", // Use miter to preserve sharp corners
+      strokeMiterLimit: 100, // Very high value to preserve all sharp corners
     },
+
+    // Zoom Defaults
+    zoom: 1.0,
+    zoomMode: "fit",
+    canvasContainerSize: null,
+
+    // Pan Defaults
+    isPanning: false,
+    scrollPosition: { x: 0, y: 0 },
 
     // Tool Defaults
     activeTool: "select",
@@ -385,6 +419,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         Object.keys(targetPage.json).length > 0
       ) {
         await canvas.loadFromJSON(targetPage.json)
+        fixPathObjectsAfterLoad(canvas)
       }
 
       // Update active ID
@@ -413,6 +448,63 @@ export const useEditorStore = create<EditorState & EditorActions>()((
 
     setBrushColor: (color) => set({ brushColor: color }),
     setBrushWidth: (width) => set({ brushWidth: width }),
+
+    // --- Zoom Actions ---
+
+    setZoom: (zoom) => {
+      const clampedZoom = Math.max(0.1, Math.min(5.0, zoom))
+      set({ zoom: clampedZoom })
+    },
+
+    setZoomMode: (zoomMode) => set({ zoomMode }),
+
+    setCanvasContainerSize: (canvasContainerSize) =>
+      set({ canvasContainerSize }),
+
+    zoomIn: () => {
+      const { zoom } = get()
+      const newZoom = Math.min(5.0, zoom + 0.1)
+      get().applyZoom(newZoom)
+      set({ zoomMode: "custom" })
+    },
+
+    zoomOut: () => {
+      const { zoom } = get()
+      const newZoom = Math.max(0.1, zoom - 0.1)
+      get().applyZoom(newZoom)
+      set({ zoomMode: "custom" })
+    },
+
+    zoomToFit: () => {
+      const { canvas, canvasContainerSize } = get()
+      if (!canvas || !canvasContainerSize) return
+
+      const canvasWidth = canvas.width || 1200
+      const canvasHeight = canvas.height || 800
+      const padding = 40
+
+      const availableWidth = canvasContainerSize.width - padding * 2
+      const availableHeight = canvasContainerSize.height - padding * 2
+
+      const scaleX = availableWidth / canvasWidth
+      const scaleY = availableHeight / canvasHeight
+
+      const fitZoom = Math.max(0.1, Math.min(5.0, Math.min(scaleX, scaleY)))
+
+      get().applyZoom(fitZoom)
+      set({ zoomMode: "fit" })
+    },
+
+    applyZoom: (zoom) => {
+      const clampedZoom = Math.max(0.1, Math.min(5.0, zoom))
+      set({ zoom: clampedZoom })
+    },
+
+    // --- Pan Actions ---
+
+    setIsPanning: (isPanning) => set({ isPanning }),
+
+    setScrollPosition: (scrollPosition) => set({ scrollPosition }),
   }
 })
 

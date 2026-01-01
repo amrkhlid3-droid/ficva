@@ -6,12 +6,7 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   const session = await auth()
-  let userId = session?.user?.id
-
-  // Fallback for development/testing if auth is broken
-  if (!userId && process.env.NODE_ENV === "development") {
-    userId = "9df4aef9-8ab3-4689-99f4-97d33d327e37" // Test User
-  }
+  const userId = session?.user?.id
 
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 })
@@ -28,12 +23,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await auth()
-  let userId = session?.user?.id
-
-  // Fallback for development
-  if (!userId && process.env.NODE_ENV === "development") {
-    userId = "9df4aef9-8ab3-4689-99f4-97d33d327e37"
-  }
+  const userId = session?.user?.id
 
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 })

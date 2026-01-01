@@ -14,7 +14,16 @@ import {
   findClosestSegment,
   insertNodeAtSegment,
 } from "@/lib/editor/pathUtils"
+import {
+  actualToDisplay,
+  displayToActual,
+  clampDisplayOffset,
+} from "@/lib/editor/handleTransform"
 import { DeleteNodeDialog } from "./DeleteNodeDialog"
+import { useCanvasZoom } from "@/hooks/useCanvasZoom"
+import { useCanvasPan } from "@/hooks/useCanvasPan"
+import ZoomControls from "./ZoomControls"
+import CanvasNavigator from "./CanvasNavigator"
 
 // Restore PathCommand type for legacy support / Fabric compatibility
 type PathCommand = (string | number)[]
@@ -45,6 +54,8 @@ interface EditablePath extends Path {
 
 export default function FabricCanvas() {
   const canvasEl = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null!)
+  const scrollAreaRef = useRef<HTMLDivElement>(null!)
 
   // Optimize selectors to avoid re-rendering on every store change
   const setCanvas = useEditorStore((s) => s.setCanvas)
@@ -63,6 +74,119 @@ export default function FabricCanvas() {
   const isDrawingMode = useEditorStore((s) => s.isDrawingMode)
   const brushColor = useEditorStore((s) => s.brushColor)
   const brushWidth = useEditorStore((s) => s.brushWidth)
+
+  // Zoom Hook - pass scrollAreaRef for mouse-position-centered zoom
+  const { zoom, zoomIn, zoomOut, zoomToFit, centerAndZoom } = useCanvasZoom(
+    containerRef,
+    scrollAreaRef
+  )
+
+  // Pan Hook
+  const { isPanning, initializeScrollPosition } = useCanvasPan(scrollAreaRef)
+
+  // Get canvas dimensions and scroll state
+  const canvas = useEditorStore((s) => s.canvas)
+  const canvasContainerSize = useEditorStore((s) => s.canvasContainerSize)
+  const scrollPosition = useEditorStore((s) => s.scrollPosition)
+
+  // Canvas dimensions
+  const canvasWidth = canvas?.width || 1200
+  const canvasHeight = canvas?.height || 800
+
+  // Scaled dimensions
+  const scaledWidth = canvasWidth * zoom
+  const scaledHeight = canvasHeight * zoom
+
+  // Container dimensions (fallback to reasonable defaults)
+  const containerWidth = canvasContainerSize?.width || 800
+  const containerHeight = canvasContainerSize?.height || 600
+
+  // Dynamic scroll area calculation:
+  // - When zoomed out (canvas smaller than container): scroll area = container size (canvas stays centered, no scrolling needed)
+  // - When zoomed in (canvas larger than container): scroll area = canvas size + container size (allows centering at any position)
+  // This ensures the canvas can always be centered in the viewport
+  const scrollAreaWidth = Math.max(containerWidth, scaledWidth + containerWidth)
+  const scrollAreaHeight = Math.max(
+    containerHeight,
+    scaledHeight + containerHeight
+  )
+
+  // Always show navigator when canvas container is available
+  const showNavigator = canvasContainerSize !== null
+
+  // Handle navigator navigation
+  const handleNavigate = (x: number, y: number) => {
+    const scrollArea = scrollAreaRef.current
+    if (scrollArea) {
+      scrollArea.scrollLeft = x
+      scrollArea.scrollTop = y
+    }
+  }
+
+  // Initialize scroll position when canvas or zoom changes
+  useEffect(() => {
+    initializeScrollPosition()
+  }, [canvas, initializeScrollPosition])
+
+  // Update control point sizes and canvas resolution when zoom changes
+  useEffect(() => {
+    const canvas = useEditorStore.getState().canvas
+    if (!canvas) return
+
+    // Update canvas rendering quality for crisp display at high zoom levels
+    const canvasElement = canvas.getElement()
+    if (canvasElement) {
+      const ctx = canvasElement.getContext("2d")
+      if (ctx) {
+        // Disable image smoothing when zoomed in to prevent blurry edges
+        ctx.imageSmoothingEnabled = zoom <= 1
+        ctx.imageSmoothingQuality = "high"
+      }
+    }
+
+    // Update all control points with inverse zoom scaling
+    if (controlsRef.current.length > 0) {
+      controlsRef.current.forEach((ctrl) => {
+        const cp = ctrl as ControlPoint
+        const data = cp.data
+        if (!data) return
+
+        // Calculate new sizes based on zoom
+        const baseRadius = data.type === "anchor" ? 5 : 3
+        const baseStrokeWidth = 1
+        const basePadding = data.type === "anchor" ? 10 : 5
+
+        cp.set({
+          radius: baseRadius / zoom,
+          strokeWidth: baseStrokeWidth / zoom,
+          padding: basePadding / zoom,
+        })
+        cp.setCoords()
+
+        // Update associated line strokeWidth if this is a handle
+        if (cp.line) {
+          cp.line.set({ strokeWidth: 1 / zoom })
+          cp.line.setCoords()
+        }
+      })
+    }
+
+    // Update hover indicator size if it exists
+    if (editingPathRef.current) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pathAny = editingPathRef.current as any
+      const state = pathAny._ghostHoverState
+      if (state?.hoverIndicator) {
+        state.hoverIndicator.set({
+          radius: 6 / zoom,
+          strokeWidth: 2 / zoom,
+        })
+        state.hoverIndicator.setCoords()
+      }
+    }
+
+    canvas.requestRenderAll()
+  }, [zoom])
 
   useEffect(() => {
     const canvas = useEditorStore.getState().canvas
@@ -376,6 +500,7 @@ export default function FabricCanvas() {
         strokeDashArray: penToolConfig.strokeDashArray || undefined,
         strokeLineCap: penToolConfig.strokeLineCap,
         strokeLineJoin: penToolConfig.strokeLineJoin,
+        strokeMiterLimit: penToolConfig.strokeMiterLimit,
         fill: "rgba(255, 0, 0, 0.2)",
         objectCaching: false,
         selectable: false,
@@ -464,10 +589,14 @@ export default function FabricCanvas() {
         const dist = Math.hypot(rawDx, rawDy)
 
         // DRAG THRESHOLD: 5px
-        // Only switch to curve if user intentionally drags
-        if (dist > 5) {
-          const dx = rawDx * 0.5 // SENSITIVITY MULTIPLIER: 0.5
-          const dy = rawDy * 0.5
+        // Only switch to curve if user intentionally drags beyond minimum
+        const control_length = 5
+        if (dist > control_length) {
+          // Calculate effective drag distance (beyond threshold)
+          const effectiveDist = dist - control_length
+          const scale = (effectiveDist / dist) * 0.5 // SENSITIVITY MULTIPLIER: 0.5
+          const dx = rawDx * scale
+          const dy = rawDy * scale
 
           // cp2 (outgoing) is in the direction of the drag
           anchor.cp2 = { x: anchor.x + dx, y: anchor.y + dy }
@@ -570,8 +699,10 @@ export default function FabricCanvas() {
           strokeDashArray: penToolConfig.strokeDashArray || undefined,
           strokeLineCap: penToolConfig.strokeLineCap,
           strokeLineJoin: penToolConfig.strokeLineJoin,
+          strokeMiterLimit: penToolConfig.strokeMiterLimit,
           fill: "rgba(255, 0, 0, 0.5)",
-          objectCaching: true,
+          objectCaching: false, // Disable caching to prevent miter corners from being clipped
+          exactBoundingBox: true, // Include stroke miter corners in bounding box
           selectable: true,
           evented: true,
           originX: "left",
@@ -709,7 +840,12 @@ export default function FabricCanvas() {
           stroke: oldPath._originalStroke || oldPath.stroke,
 
           strokeWidth: oldPath._originalStrokeWidth || oldPath.strokeWidth,
-          objectCaching: true,
+          strokeLineJoin: oldPath.strokeLineJoin,
+          strokeMiterLimit: oldPath.strokeMiterLimit,
+          strokeLineCap: oldPath.strokeLineCap,
+          strokeDashArray: oldPath.strokeDashArray,
+          objectCaching: false, // Disable caching to prevent miter corners from being clipped
+          exactBoundingBox: true, // Include stroke miter corners in bounding box
           id: oldPath.id,
           scaleX: oldPath.scaleX,
           scaleY: oldPath.scaleY,
@@ -850,19 +986,25 @@ export default function FabricCanvas() {
       nodeIndex: number,
       nodeMode: NodeMode
     ) => {
+      // Get current zoom from store to scale control points inversely
+      const currentZoom = useEditorStore.getState().zoom
+      const baseRadius = type === "anchor" ? 5 : 3
+      const baseStrokeWidth = 1
+      const basePadding = type === "anchor" ? 10 : 5
+
       const circle = new Circle({
         left: x,
         top: y,
-        radius: type === "anchor" ? 5 : 3,
+        radius: baseRadius / currentZoom,
         fill: type === "anchor" ? "#0000ff" : "#ffffff",
         stroke: "#0000ff",
-        strokeWidth: 1,
+        strokeWidth: baseStrokeWidth / currentZoom,
         originX: "center",
         originY: "center",
         hasControls: false,
         hasBorders: false,
         selectable: true,
-        padding: type === "anchor" ? 10 : 5, // Increase hit area
+        padding: basePadding / currentZoom, // Increase hit area
         // Custom props
         data: { type, nodeIndex, nodeMode },
         excludeFromExport: true, // CRITICAL: Do not save controls to JSON
@@ -992,6 +1134,12 @@ export default function FabricCanvas() {
           stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING
           strokeWidth: pathObj.strokeWidth || 1, // Match original width exactly
           strokeUniform: pathObj.strokeUniform, // Copy uniform scaling
+          // Copy stroke style properties to match original path appearance
+          strokeLineCap: pathObj.strokeLineCap,
+          strokeLineJoin: pathObj.strokeLineJoin,
+          strokeMiterLimit: pathObj.strokeMiterLimit,
+          strokeDashArray: pathObj.strokeDashArray,
+          strokeDashOffset: pathObj.strokeDashOffset,
           selectable: true, // Allow selecting to inspect data
           evented: true, // This object captures events
           perPixelTargetFind: true, // CRITICAL: Only stroke pixels trigger events
@@ -1089,11 +1237,12 @@ export default function FabricCanvas() {
         // Create hover indicator circle (hollow)
         const createHoverIndicator = () => {
           if (state.hoverIndicator) return state.hoverIndicator
+          const currentZoom = useEditorStore.getState().zoom
           state.hoverIndicator = new Circle({
-            radius: 6,
+            radius: 6 / currentZoom,
             fill: "transparent",
             stroke: state.highlightColor,
-            strokeWidth: 2,
+            strokeWidth: 2 / currentZoom,
             originX: "center",
             originY: "center",
             selectable: false,
@@ -1355,16 +1504,20 @@ export default function FabricCanvas() {
               ctrl.set({ left: p.x, top: p.y })
               ctrl.setCoords()
             } else if (data.type === "handle_in" && node.mode === "mirrored") {
+              // Use display-transformed position for handles
+              const displayHandleIn = actualToDisplay(node.handleIn)
               const p = transformPoint(
-                node.anchor.x + node.handleIn.x,
-                node.anchor.y + node.handleIn.y
+                node.anchor.x + displayHandleIn.x,
+                node.anchor.y + displayHandleIn.y
               )
               ctrl.set({ left: p.x, top: p.y })
               ctrl.setCoords()
             } else if (data.type === "handle_out" && node.mode === "mirrored") {
+              // Use display-transformed position for handles
+              const displayHandleOut = actualToDisplay(node.handleOut)
               const p = transformPoint(
-                node.anchor.x + node.handleOut.x,
-                node.anchor.y + node.handleOut.y
+                node.anchor.x + displayHandleOut.x,
+                node.anchor.y + displayHandleOut.y
               )
               ctrl.set({ left: p.x, top: p.y })
               ctrl.setCoords()
@@ -1601,10 +1754,14 @@ export default function FabricCanvas() {
         // 2. Create Handles (if Mirrored)
         // Only show handles if mode is mirrored (or later: detached)
         if (node.mode === "mirrored") {
-          // Handle In
+          // Apply display transformation to handle offsets
+          const displayHandleIn = actualToDisplay(node.handleIn)
+          const displayHandleOut = actualToDisplay(node.handleOut)
+
+          // Handle In - use display-transformed position
           const pIn = transformPoint(
-            anchor.x + node.handleIn.x,
-            anchor.y + node.handleIn.y
+            anchor.x + displayHandleIn.x,
+            anchor.y + displayHandleIn.y
           )
           const handleIn = createControl(
             pIn.x,
@@ -1615,9 +1772,10 @@ export default function FabricCanvas() {
           )
 
           // Create Line for Handle In
+          const currentZoom = useEditorStore.getState().zoom
           const lineIn = new Line([p.x, p.y, pIn.x, pIn.y], {
             stroke: "#888888",
-            strokeWidth: 1,
+            strokeWidth: 1 / currentZoom,
             selectable: false,
             evented: false,
             originX: "center",
@@ -1625,10 +1783,10 @@ export default function FabricCanvas() {
             excludeFromExport: true,
           })
 
-          // Handle Out
+          // Handle Out - use display-transformed position
           const pOut = transformPoint(
-            anchor.x + node.handleOut.x,
-            anchor.y + node.handleOut.y
+            anchor.x + displayHandleOut.x,
+            anchor.y + displayHandleOut.y
           )
           const handleOut = createControl(
             pOut.x,
@@ -1641,7 +1799,7 @@ export default function FabricCanvas() {
           // Create Line for Handle Out
           const lineOut = new Line([p.x, p.y, pOut.x, pOut.y], {
             stroke: "#888888",
-            strokeWidth: 1,
+            strokeWidth: 1 / currentZoom,
             selectable: false,
             evented: false,
             originX: "center",
@@ -1801,22 +1959,25 @@ export default function FabricCanvas() {
             return new Point(localX, localY).transform(matrix)
           }
 
-          // 找到关联的控制柄并更新位置
+          // 找到关联的控制柄并更新位置（使用显示转换后的位置）
           const controls = controlsRef.current as ControlPoint[]
+          const displayHandleIn = actualToDisplay(node.handleIn)
+          const displayHandleOut = actualToDisplay(node.handleOut)
+
           controls.forEach((ctrl) => {
             if (ctrl.data?.nodeIndex !== nodeIndex) return
 
             if (ctrl.data.type === "handle_in") {
               const newPos = transformPoint(
-                node.anchor.x + node.handleIn.x,
-                node.anchor.y + node.handleIn.y
+                node.anchor.x + displayHandleIn.x,
+                node.anchor.y + displayHandleIn.y
               )
               ctrl.set({ left: newPos.x, top: newPos.y })
               ctrl.setCoords()
             } else if (ctrl.data.type === "handle_out") {
               const newPos = transformPoint(
-                node.anchor.x + node.handleOut.x,
-                node.anchor.y + node.handleOut.y
+                node.anchor.x + displayHandleOut.x,
+                node.anchor.y + displayHandleOut.y
               )
               ctrl.set({ left: newPos.x, top: newPos.y })
               ctrl.setCoords()
@@ -1834,21 +1995,19 @@ export default function FabricCanvas() {
         const node = nodes[nodeIndex]
         const anchor = node.anchor
 
-        // Vector from anchor to handle (new position)
-        let dx = rawX - anchor.x
-        let dy = rawY - anchor.y
+        // 鼠标位置直接作为显示空间的控制点位置
+        // rawX, rawY 是路径本地坐标系中的位置
+        // 显示偏移 = 鼠标位置 - 锚点位置
+        const displayDx = rawX - anchor.x
+        const displayDy = rawY - anchor.y
 
-        // Mirrored Mode Constraint: Min length 20px
+        // Convert display offset back to actual offset for storage
+        const actualOffset = displayToActual({ x: displayDx, y: displayDy })
+        const dx = actualOffset.x
+        const dy = actualOffset.y
+
+        // Update data (no longer need 20px minimum constraint - handled by displayToActual)
         if (node.mode === "mirrored") {
-          let len = Math.sqrt(dx * dx + dy * dy)
-          if (len < 0.1) len = 0.1 // Avoid div by zero
-
-          if (len < 20) {
-            const scale = 20 / len
-            dx *= scale
-            dy *= scale
-          }
-
           // Update data
           if (data.type === "handle_in") {
             node.handleIn = { x: dx, y: dy }
@@ -1875,9 +2034,16 @@ export default function FabricCanvas() {
           return new Point(localX, localY).transform(matrix)
         }
 
-        // Sync visual target position (in case of constraints)
-        // Convert back to canvas coordinates
-        const newWorld = transformPoint(anchor.x + dx, anchor.y + dy)
+        // Sync visual target position using clamped display coordinates
+        // Use clampDisplayOffset to ensure control point stays at minimum 20px
+        const clampedDisplayOffset = clampDisplayOffset({
+          x: displayDx,
+          y: displayDy,
+        })
+        const newWorld = transformPoint(
+          anchor.x + clampedDisplayOffset.x,
+          anchor.y + clampedDisplayOffset.y
+        )
         target.set({ left: newWorld.x, top: newWorld.y })
         target.setCoords()
 
@@ -1891,11 +2057,16 @@ export default function FabricCanvas() {
           )
 
           if (oppositeCtrl) {
-            // Wait, if I drag handleIn(dx,dy), handleOut is (-dx,-dy).
-            // If I drag handleOut(dx,dy), handleIn is (-dx,-dy).
-            // So opposite represents -dx, -dy relative to anchor.
-
-            const opWorld = transformPoint(anchor.x - dx, anchor.y - dy)
+            // Opposite handle is (-displayDx, -displayDy) in display space
+            // Use clampDisplayOffset to ensure minimum 20px
+            const oppositeDisplayOffset = clampDisplayOffset({
+              x: -displayDx,
+              y: -displayDy,
+            })
+            const opWorld = transformPoint(
+              anchor.x + oppositeDisplayOffset.x,
+              anchor.y + oppositeDisplayOffset.y
+            )
             oppositeCtrl.set({ left: opWorld.x, top: opWorld.y })
             oppositeCtrl.setCoords()
           }
@@ -1927,6 +2098,12 @@ export default function FabricCanvas() {
           stroke: "#4f46e5", // KEEP VISIBLE FOR DEBUGGING (Step 27 request)
           strokeWidth: pathObj.strokeWidth || 1,
           strokeUniform: pathObj.strokeUniform,
+          // Copy stroke style properties to match original path appearance
+          strokeLineCap: pathObj.strokeLineCap,
+          strokeLineJoin: pathObj.strokeLineJoin,
+          strokeMiterLimit: pathObj.strokeMiterLimit,
+          strokeDashArray: pathObj.strokeDashArray,
+          strokeDashOffset: pathObj.strokeDashOffset,
           selectable: true,
           evented: true,
           perPixelTargetFind: true,
@@ -2159,10 +2336,12 @@ export default function FabricCanvas() {
           newOutY = hOutY
 
         if (isCollapsedIn && isCollapsedOut) {
-          // Default expansion: Horizontal 20px
-          newInX = ax - 20
+          // Default expansion: Use minimal offset 0.001 to preserve direction
+          // This keeps the curve nearly straight while enabling mirrored mode
+          // The actual display will show at ~20px due to actualToDisplay transform
+          newInX = ax - 0.001
           newInY = ay
-          newOutX = ax + 20
+          newOutX = ax + 0.001
           newOutY = ay
         } else {
           // Enforce symmetry logic
@@ -2302,29 +2481,9 @@ export default function FabricCanvas() {
             dirY = 0
           }
 
-          // Calculate handle length based on distance to neighbors (30% of min distance, clamped to [15, 50])
-          let handleLength = 30 // Default
-          const distances: number[] = []
-
-          if (prevNode) {
-            const distPrev = Math.sqrt(
-              (node.anchor.x - prevNode.anchor.x) ** 2 +
-                (node.anchor.y - prevNode.anchor.y) ** 2
-            )
-            distances.push(distPrev)
-          }
-          if (nextNode) {
-            const distNext = Math.sqrt(
-              (node.anchor.x - nextNode.anchor.x) ** 2 +
-                (node.anchor.y - nextNode.anchor.y) ** 2
-            )
-            distances.push(distNext)
-          }
-
-          if (distances.length > 0) {
-            const minDist = Math.min(...distances)
-            handleLength = Math.max(15, Math.min(50, minDist * 0.3))
-          }
+          // Use minimal offset 0.001 to preserve direction while keeping curve nearly straight
+          // The display transform will show handles at ~20px, but actual curve stays almost unchanged
+          const handleLength = 0.001
 
           // Generate symmetric handles along the direction
           node.handleOut = { x: dirX * handleLength, y: dirY * handleLength }
@@ -2474,16 +2633,20 @@ export default function FabricCanvas() {
               ctrl.set({ left: p.x, top: p.y })
               ctrl.setCoords()
             } else if (data.type === "handle_in" && node.mode === "mirrored") {
+              // Use display-transformed position for handles
+              const displayHandleIn = actualToDisplay(node.handleIn)
               const p = transformPoint(
-                node.anchor.x + node.handleIn.x,
-                node.anchor.y + node.handleIn.y
+                node.anchor.x + displayHandleIn.x,
+                node.anchor.y + displayHandleIn.y
               )
               ctrl.set({ left: p.x, top: p.y })
               ctrl.setCoords()
             } else if (data.type === "handle_out" && node.mode === "mirrored") {
+              // Use display-transformed position for handles
+              const displayHandleOut = actualToDisplay(node.handleOut)
               const p = transformPoint(
-                node.anchor.x + node.handleOut.x,
-                node.anchor.y + node.handleOut.y
+                node.anchor.x + displayHandleOut.x,
+                node.anchor.y + displayHandleOut.y
               )
               ctrl.set({ left: p.x, top: p.y })
               ctrl.setCoords()
@@ -2571,19 +2734,77 @@ export default function FabricCanvas() {
   }
 
   return (
-    <div className="relative flex h-full w-full items-center justify-center overflow-auto bg-zinc-100 dark:bg-zinc-950">
-      {/* Dot Pattern Background */}
+    <div
+      ref={containerRef}
+      className="relative h-full w-full overflow-hidden bg-zinc-100 dark:bg-zinc-950"
+    >
+      {/* Scrollable area for panning */}
       <div
-        className="pointer-events-none absolute inset-0 text-zinc-300 opacity-50 dark:text-zinc-700 dark:opacity-20"
+        ref={scrollAreaRef}
+        className="scrollbar-hidden absolute inset-0 overflow-auto"
         style={{
-          backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
-          backgroundSize: "20px 20px",
+          cursor: isPanning ? "grabbing" : "default",
         }}
-      ></div>
+      >
+        {/* Virtual scroll space - 2x canvas size */}
+        <div
+          className="relative"
+          style={{
+            width: scrollAreaWidth,
+            height: scrollAreaHeight,
+          }}
+        >
+          {/* Dot Pattern Background */}
+          <div
+            className="pointer-events-none absolute inset-0 text-zinc-300 opacity-50 dark:text-zinc-700 dark:opacity-20"
+            style={{
+              backgroundImage:
+                "radial-gradient(currentColor 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          ></div>
 
-      <div className="z-0 border border-zinc-200 shadow-2xl dark:border-zinc-800">
-        <canvas ref={canvasEl} />
+          {/* Canvas wrapper - centered in scroll area */}
+          <div
+            className="absolute z-0 border border-zinc-200 shadow-2xl dark:border-zinc-800"
+            style={{
+              left: "50%",
+              top: "50%",
+              transform: `translate(-50%, -50%) scale(${zoom})`,
+              transformOrigin: "center center",
+              // Force GPU acceleration for better performance
+              willChange: "transform",
+            }}
+          >
+            <canvas ref={canvasEl} />
+          </div>
+        </div>
       </div>
+
+      {/* Canvas Navigator - shows when canvas exceeds viewport */}
+      {showNavigator && canvasContainerSize && (
+        <CanvasNavigator
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          zoom={zoom}
+          containerWidth={canvasContainerSize.width}
+          containerHeight={canvasContainerSize.height}
+          scrollLeft={scrollPosition.x}
+          scrollTop={scrollPosition.y}
+          scrollAreaWidth={scrollAreaWidth}
+          scrollAreaHeight={scrollAreaHeight}
+          onNavigate={handleNavigate}
+        />
+      )}
+
+      {/* Zoom Controls */}
+      <ZoomControls
+        zoom={zoom}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onZoomChange={centerAndZoom}
+        onZoomToFit={zoomToFit}
+      />
 
       <DeleteNodeDialog
         open={deleteNodeDialogOpen}

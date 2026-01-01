@@ -97,7 +97,8 @@ export default function Toolbar() {
           strokeWidth: 4,
           fill: "",
           strokeLineCap: "round",
-          strokeLineJoin: "round",
+          strokeLineJoin: "miter", // Preserve sharp corners
+          strokeMiterLimit: 100, // Very high value to preserve all sharp corners
         })
         break
     }

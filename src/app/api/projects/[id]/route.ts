@@ -9,11 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth()
-  let userId = session?.user?.id
-
-  if (!userId && process.env.NODE_ENV === "development") {
-    userId = "9df4aef9-8ab3-4689-99f4-97d33d327e37"
-  }
+  const userId = session?.user?.id
 
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 })
@@ -40,17 +36,28 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth()
-  let userId = session?.user?.id
-
-  if (!userId && process.env.NODE_ENV === "development") {
-    userId = "9df4aef9-8ab3-4689-99f4-97d33d327e37"
-  }
+  const userId = session?.user?.id
 
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 })
   }
 
   const { id } = await params
+
+  // Verify ownership before updating
+  const [existingProject] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, id))
+
+  if (!existingProject) {
+    return new NextResponse("Not Found", { status: 404 })
+  }
+
+  if (existingProject.userId !== userId) {
+    return new NextResponse("Forbidden", { status: 403 })
+  }
+
   const body = await req.json()
   const { name, json, width, height, thumbnailUrl } = body
 
@@ -64,7 +71,7 @@ export async function PATCH(
       ...(thumbnailUrl && { thumbnailUrl }),
       updatedAt: new Date(),
     })
-    .where(eq(projects.id, id)) // Add strict ownership check here if needed in query or separate check
+    .where(eq(projects.id, id))
     .returning()
 
   return NextResponse.json(updatedProject)
@@ -75,11 +82,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth()
-  let userId = session?.user?.id
-
-  if (!userId && process.env.NODE_ENV === "development") {
-    userId = "9df4aef9-8ab3-4689-99f4-97d33d327e37"
-  }
+  const userId = session?.user?.id
 
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 })

@@ -11,6 +11,7 @@ import LeftSidebar from "@/components/editor/LeftSidebar"
 import ContextMenu from "@/components/editor/ContextMenu"
 import SlideList from "@/components/editor/slides/SlideList"
 import { useEditorStore } from "@/store/useEditorStore"
+import { fixPathObjectsAfterLoad } from "@/lib/editor/utils/CanvasUtils"
 
 interface ProjectData {
   id: string
@@ -66,6 +67,7 @@ export default function EditorPage() {
       if (activePage && activePage.json) {
         canvas.loadFromJSON(activePage.json).then(() => {
           if (!canvas.getElement()) return
+          fixPathObjectsAfterLoad(canvas)
           canvas.requestRenderAll()
 
           useEditorStore.getState().syncLayers(canvas)
@@ -91,30 +93,72 @@ export default function EditorPage() {
       Array.isArray(json.pages) &&
       json.pages.length > 0
     ) {
-      console.log("Loading multi-page project from server...")
-      const { pages, activePageId } = json
+      console.log("Loading multi-page project...")
 
-      // Update Store
-      useEditorStore.setState({
-        pages: pages,
-        activePageId: activePageId || pages[0].id,
-      })
+      // --- Conflict Resolution Logic for Multi-page Projects ---
+      import("@/utils/storage").then(
+        ({ loadFromLocalStorage, saveToLocalStorage }) => {
+          const localData = loadFromLocalStorage(params.id as string)
+          let finalPages = json.pages
+          let finalActivePageId = json.activePageId || json.pages[0].id
+          let finalProjectName = projectData.name
 
-      // Load active page into canvas
-      const activePage = pages.find(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (p: any) => p.id === (activePageId || pages[0].id)
+          if (localData) {
+            const serverTime = projectData.updatedAt
+              ? new Date(projectData.updatedAt).getTime()
+              : 0
+            const localTime = localData.timestamp
+
+            console.log("[Sync] Server Ts:", serverTime, "Local Ts:", localTime)
+
+            if (localData.unsavedChanges && localTime > serverTime) {
+              console.log("[Sync] Conflict: Local is newer. Using Local.")
+              // Use local data
+              finalPages = localData.data.pages
+              finalActivePageId =
+                localData.data.activePageId || localData.data.pages[0]?.id
+              finalProjectName = localData.data.projectName || projectData.name
+            } else {
+              console.log("[Sync] Server is newer or synced. Updating Local.")
+              // Update local storage to match server
+              saveToLocalStorage(
+                params.id as string,
+                {
+                  pages: json.pages,
+                  activePageId: json.activePageId,
+                  projectName: projectData.name,
+                },
+                false
+              )
+            }
+          }
+
+          // Update Store
+          useEditorStore.setState({
+            pages: finalPages,
+            activePageId: finalActivePageId,
+            projectName: finalProjectName,
+            projectId: params.id as string,
+          })
+
+          // Load active page into canvas
+          const activePage = finalPages.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (p: any) => p.id === finalActivePageId
+          )
+          if (activePage && activePage.json) {
+            canvas.loadFromJSON(activePage.json).then(() => {
+              if (!canvas.getElement()) return // Check if disposed
+              fixPathObjectsAfterLoad(canvas)
+              canvas.requestRenderAll()
+              useEditorStore.getState().syncLayers(canvas)
+              finishLoading()
+            })
+          } else {
+            finishLoading()
+          }
+        }
       )
-      if (activePage && activePage.json) {
-        canvas.loadFromJSON(activePage.json).then(() => {
-          if (!canvas.getElement()) return // Check if disposed
-          canvas.requestRenderAll()
-          useEditorStore.getState().syncLayers(canvas)
-          finishLoading()
-        })
-      } else {
-        finishLoading()
-      }
     } else if (json && Object.keys(json).length > 0) {
       // Fallback: Legacy single page project
       console.log("Loading legacy single-page project...")
@@ -233,6 +277,7 @@ export default function EditorPage() {
               if (activePage && activePage.json) {
                 canvas.loadFromJSON(activePage.json).then(() => {
                   if (!canvas.getElement()) return // Check if disposed
+                  fixPathObjectsAfterLoad(canvas)
                   canvas.requestRenderAll()
                   useEditorStore.getState().syncLayers(canvas)
                   finishLoading()
@@ -250,6 +295,7 @@ export default function EditorPage() {
               )
               canvas.loadFromJSON(finalData.json).then(() => {
                 if (!canvas.getElement()) return // Check if disposed
+                fixPathObjectsAfterLoad(canvas)
                 canvas.requestRenderAll()
                 useEditorStore.getState().syncLayers(canvas)
 
@@ -292,6 +338,7 @@ export default function EditorPage() {
         // Original legacy single page project loading if conflict resolution not applicable
         canvas.loadFromJSON(json).then(() => {
           if (!canvas.getElement()) return // Check if disposed
+          fixPathObjectsAfterLoad(canvas)
           canvas.requestRenderAll()
           useEditorStore.getState().syncLayers(canvas)
 
@@ -351,7 +398,9 @@ export default function EditorPage() {
 
         {/* Center Canvas (Flexible) */}
         <main className="bg-muted/30 relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="relative flex-1">
+          <div
+            className={`relative flex-1 ${!isCanvasReady ? "invisible" : ""}`}
+          >
             <FabricCanvas />
             <ContextMenu />
           </div>
