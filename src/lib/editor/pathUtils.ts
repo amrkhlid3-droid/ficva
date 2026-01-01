@@ -106,3 +106,258 @@ export function createMirroredNode(
     mode: "mirrored",
   }
 }
+
+// ============================================
+// 贝塞尔曲线工具函数
+// ============================================
+
+interface Point2D {
+  x: number
+  y: number
+}
+
+/**
+ * 计算三次贝塞尔曲线上 t 参数位置的点
+ * 使用 De Casteljau 算法
+ */
+export function evaluateCubicBezier(
+  p0: Point2D,
+  p1: Point2D,
+  p2: Point2D,
+  p3: Point2D,
+  t: number
+): Point2D {
+  const t2 = t * t
+  const t3 = t2 * t
+  const mt = 1 - t
+  const mt2 = mt * mt
+  const mt3 = mt2 * mt
+
+  return {
+    x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p2.x + t3 * p3.x,
+    y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p2.y + t3 * p3.y,
+  }
+}
+
+/**
+ * 使用 De Casteljau 算法在 t 位置细分三次贝塞尔曲线
+ * 返回两段新曲线的控制点
+ */
+export function subdivideCubicBezier(
+  p0: Point2D,
+  p1: Point2D,
+  p2: Point2D,
+  p3: Point2D,
+  t: number
+): {
+  left: { p0: Point2D; p1: Point2D; p2: Point2D; p3: Point2D }
+  right: { p0: Point2D; p1: Point2D; p2: Point2D; p3: Point2D }
+} {
+  // De Casteljau 中间点
+  const p01 = { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t }
+  const p12 = { x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t }
+  const p23 = { x: p2.x + (p3.x - p2.x) * t, y: p2.y + (p3.y - p2.y) * t }
+
+  const p012 = {
+    x: p01.x + (p12.x - p01.x) * t,
+    y: p01.y + (p12.y - p01.y) * t,
+  }
+  const p123 = {
+    x: p12.x + (p23.x - p12.x) * t,
+    y: p12.y + (p23.y - p12.y) * t,
+  }
+
+  const p0123 = {
+    x: p012.x + (p123.x - p012.x) * t,
+    y: p012.y + (p123.y - p012.y) * t,
+  }
+
+  return {
+    left: { p0: p0, p1: p01, p2: p012, p3: p0123 },
+    right: { p0: p0123, p1: p123, p2: p23, p3: p3 },
+  }
+}
+
+/**
+ * 计算点到线段上最近点的距离和 t 参数
+ * 通过采样曲线来近似
+ */
+function pointToSegmentDistance(
+  point: Point2D,
+  p0: Point2D,
+  p1: Point2D,
+  p2: Point2D,
+  p3: Point2D,
+  samples: number = 50
+): { distance: number; t: number } {
+  let minDist = Infinity
+  let bestT = 0
+
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples
+    const pt = evaluateCubicBezier(p0, p1, p2, p3, t)
+    const dx = pt.x - point.x
+    const dy = pt.y - point.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+
+    if (dist < minDist) {
+      minDist = dist
+      bestT = t
+    }
+  }
+
+  return { distance: minDist, t: bestT }
+}
+
+/**
+ * 找到鼠标点最接近的曲线段索引和 t 参数
+ * @param nodes 路径节点数组
+ * @param mousePoint 鼠标位置（路径本地坐标）
+ * @param closed 路径是否闭合
+ * @param threshold 距离阈值（像素），超出则返回 null
+ */
+export function findClosestSegment(
+  nodes: PathNode[],
+  mousePoint: Point2D,
+  closed: boolean,
+  threshold: number = 20
+): { segmentIndex: number; t: number } | null {
+  if (nodes.length < 2) return null
+
+  let minDist = Infinity
+  let bestSegment = -1
+  let bestT = 0
+
+  const segmentCount = closed ? nodes.length : nodes.length - 1
+
+  for (let i = 0; i < segmentCount; i++) {
+    const curr = nodes[i]
+    const next = nodes[(i + 1) % nodes.length]
+
+    if (!curr || !next) continue
+
+    // 构建贝塞尔曲线控制点
+    const p0 = curr.anchor
+    const p1 = {
+      x: curr.anchor.x + curr.handleOut.x,
+      y: curr.anchor.y + curr.handleOut.y,
+    }
+    const p2 = {
+      x: next.anchor.x + next.handleIn.x,
+      y: next.anchor.y + next.handleIn.y,
+    }
+    const p3 = next.anchor
+
+    const result = pointToSegmentDistance(mousePoint, p0, p1, p2, p3)
+
+    if (result.distance < minDist) {
+      minDist = result.distance
+      bestSegment = i
+      bestT = result.t
+    }
+  }
+
+  if (minDist > threshold || bestSegment < 0) {
+    return null
+  }
+
+  return { segmentIndex: bestSegment, t: bestT }
+}
+
+/**
+ * 在指定线段的 t 位置插入新节点
+ * 使用 De Casteljau 细分保持曲线形状
+ */
+export function insertNodeAtSegment(
+  nodes: PathNode[],
+  segmentIndex: number,
+  t: number,
+  mode: NodeMode
+): PathNode[] {
+  const newNodes = [...nodes]
+  const curr = nodes[segmentIndex]
+  const nextIndex = (segmentIndex + 1) % nodes.length
+  const next = nodes[nextIndex]
+
+  if (!curr || !next) return nodes
+
+  // 构建原始贝塞尔曲线控制点
+  const p0 = curr.anchor
+  const p1 = {
+    x: curr.anchor.x + curr.handleOut.x,
+    y: curr.anchor.y + curr.handleOut.y,
+  }
+  const p2 = {
+    x: next.anchor.x + next.handleIn.x,
+    y: next.anchor.y + next.handleIn.y,
+  }
+  const p3 = next.anchor
+
+  // 使用 De Casteljau 细分曲线
+  const subdivision = subdivideCubicBezier(p0, p1, p2, p3, t)
+
+  // 更新当前节点的 handleOut（左半部分的 p1 相对于 p0）
+  const newCurrHandleOut = {
+    x: subdivision.left.p1.x - p0.x,
+    y: subdivision.left.p1.y - p0.y,
+  }
+
+  // 创建新节点
+  const newAnchor = subdivision.left.p3 // = subdivision.right.p0，细分点
+
+  // 新节点的 handleIn（左半部分的 p2 相对于新锚点）
+  const newHandleIn = {
+    x: subdivision.left.p2.x - newAnchor.x,
+    y: subdivision.left.p2.y - newAnchor.y,
+  }
+
+  // 新节点的 handleOut（右半部分的 p1 相对于新锚点）
+  const newHandleOut = {
+    x: subdivision.right.p1.x - newAnchor.x,
+    y: subdivision.right.p1.y - newAnchor.y,
+  }
+
+  // 更新下一个节点的 handleIn（右半部分的 p2 相对于 p3）
+  const newNextHandleIn = {
+    x: subdivision.right.p2.x - p3.x,
+    y: subdivision.right.p2.y - p3.y,
+  }
+
+  // 如果是直线模式，清零所有手柄
+  let finalHandleIn = newHandleIn
+  let finalHandleOut = newHandleOut
+  let finalCurrHandleOut = newCurrHandleOut
+  let finalNextHandleIn = newNextHandleIn
+
+  if (mode === "straight") {
+    finalHandleIn = { x: 0, y: 0 }
+    finalHandleOut = { x: 0, y: 0 }
+    finalCurrHandleOut = { x: 0, y: 0 }
+    finalNextHandleIn = { x: 0, y: 0 }
+  }
+
+  // 创建新节点
+  const newNode: PathNode = {
+    anchor: newAnchor,
+    handleIn: finalHandleIn,
+    handleOut: finalHandleOut,
+    mode,
+  }
+
+  // 更新当前节点
+  newNodes[segmentIndex] = {
+    ...curr,
+    handleOut: finalCurrHandleOut,
+  }
+
+  // 更新下一个节点
+  newNodes[nextIndex] = {
+    ...next,
+    handleIn: finalNextHandleIn,
+  }
+
+  // 在正确位置插入新节点
+  newNodes.splice(segmentIndex + 1, 0, newNode)
+
+  return newNodes
+}

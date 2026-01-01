@@ -9,7 +9,11 @@ import { RemoveObjectsCommand } from "@/lib/editor/history/commands/RemoveObject
 import { AddObjectCommand } from "@/lib/editor/history/commands/AddObjectCommand"
 import type { NodeMode, CustomPathData } from "@/types/fabric"
 import { svgPathToNodes } from "@/lib/editor/pathConverter"
-import { nodesToSvgPath } from "@/lib/editor/pathUtils"
+import {
+  nodesToSvgPath,
+  findClosestSegment,
+  insertNodeAtSegment,
+} from "@/lib/editor/pathUtils"
 
 // Restore PathCommand type for legacy support / Fabric compatibility
 type PathCommand = (string | number)[]
@@ -1208,17 +1212,79 @@ export default function FabricCanvas() {
         })
 
         gp.on("mousedown", (e) => {
-          // Keep animation running while clicking on the path
-          // Don't call discardActiveObject() as it triggers mouseout
-          console.log("Ghost path clicked")
-          // Restart animation if it stopped
-          if (state.isHovering && state.breathingAnimationId === null) {
-            startBreathingAnimation()
+          const mouseEvent = e.e as MouseEvent
+
+          // Only handle left mouse button clicks
+          if (mouseEvent.button !== 0) return
+
+          // Get current path object and its data
+          const pathObj = editingPathRef.current
+          if (!pathObj) return
+
+          const pathWithData = pathObj as EditablePath & {
+            customPathData?: CustomPathData
           }
-          // Update indicator position on click too
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          updateHoverIndicatorPosition(e as any)
-          canvas.requestRenderAll()
+          if (!pathWithData.customPathData) return
+
+          // Get mouse position in canvas coordinates
+          const pointer = canvas.getViewportPoint(mouseEvent)
+
+          // Transform canvas coordinates to path local coordinates
+          const matrix = pathObj.calcTransformMatrix()
+          const invertedMatrix = util.invertTransform(matrix)
+          const localPoint = new Point(pointer.x, pointer.y).transform(
+            invertedMatrix
+          )
+          const offset = pathObj.pathOffset || { x: 0, y: 0 }
+          const rawPoint = {
+            x: localPoint.x + offset.x,
+            y: localPoint.y + offset.y,
+          }
+
+          // Find the closest segment to the click position
+          const result = findClosestSegment(
+            pathWithData.customPathData.nodes,
+            rawPoint,
+            pathWithData.customPathData.closed,
+            20 // threshold in pixels
+          )
+
+          if (!result) {
+            console.log("Ghost path clicked but no segment found nearby")
+            return
+          }
+
+          const { segmentIndex, t } = result
+          const nodes = pathWithData.customPathData.nodes
+
+          // Determine new node mode based on adjacent nodes
+          const prevNode = nodes[segmentIndex]
+          const nextNode = nodes[(segmentIndex + 1) % nodes.length]
+
+          if (!prevNode || !nextNode) return
+
+          const newMode: NodeMode =
+            prevNode.mode === "straight" && nextNode.mode === "straight"
+              ? "straight"
+              : "mirrored"
+
+          console.log(
+            `Adding node at segment ${segmentIndex}, t=${t.toFixed(3)}, mode=${newMode}`
+          )
+
+          // Insert the new node
+          const newNodes = insertNodeAtSegment(nodes, segmentIndex, t, newMode)
+
+          // Update path data
+          pathWithData.customPathData.nodes = newNodes
+
+          // Regenerate path and refresh edit mode
+          regeneratePath()
+          enterEditMode(pathObj)
+
+          // Stop event propagation
+          mouseEvent.stopPropagation()
+          mouseEvent.preventDefault()
         })
 
         // Cleanup function for when editing ends
