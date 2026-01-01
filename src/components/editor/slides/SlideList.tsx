@@ -64,7 +64,7 @@ export default function SlideList() {
           >
             {pages.map((page, index) => (
               <SortableSlideItem key={page.id} id={page.id}>
-                <div className="aspect-[4/3] h-full">
+                <div className="aspect-4/3 h-full">
                   <SlideThumbnail
                     id={page.id}
                     index={index}
@@ -88,7 +88,7 @@ export default function SlideList() {
           <PopoverTrigger asChild>
             <button
               className={cn(
-                "group border-muted-foreground/25 bg-background hover:border-primary flex aspect-[4/3] h-full cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed transition-all hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                "group border-muted-foreground/25 bg-background hover:border-primary flex aspect-4/3 h-full cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed transition-all hover:bg-zinc-50 dark:hover:bg-zinc-900"
               )}
             >
               <div className="bg-muted group-hover:bg-primary group-hover:text-primary-foreground flex h-8 w-8 items-center justify-center rounded-full transition-colors">

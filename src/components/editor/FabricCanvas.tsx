@@ -1,7 +1,16 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { Canvas, Circle, FabricObject, Line, Path, Point, util } from "fabric"
+import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  Canvas,
+  Circle,
+  FabricObject,
+  Line,
+  Path,
+  Point,
+  Rect,
+  util,
+} from "fabric"
 import { useTheme } from "next-themes"
 import { useEditorStore } from "@/store/useEditorStore"
 import { ModifyObjectCommand } from "@/lib/editor/history/commands/ModifyObjectCommand"
@@ -55,7 +64,6 @@ interface EditablePath extends Path {
 export default function FabricCanvas() {
   const canvasEl = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null!)
-  const scrollAreaRef = useRef<HTMLDivElement>(null!)
 
   // Optimize selectors to avoid re-rendering on every store change
   const setCanvas = useEditorStore((s) => s.setCanvas)
@@ -75,58 +83,38 @@ export default function FabricCanvas() {
   const brushColor = useEditorStore((s) => s.brushColor)
   const brushWidth = useEditorStore((s) => s.brushWidth)
 
-  // Zoom Hook - pass scrollAreaRef for mouse-position-centered zoom
-  const { zoom, zoomIn, zoomOut, zoomToFit, centerAndZoom } = useCanvasZoom(
-    containerRef,
-    scrollAreaRef
-  )
+  // Zoom Hook - uses Fabric.js native zoom API
+  const { zoom, zoomIn, zoomOut, zoomToFit, centerAndZoom } =
+    useCanvasZoom(containerRef)
 
-  // Pan Hook
-  const { isPanning, initializeScrollPosition } = useCanvasPan(scrollAreaRef)
+  // Pan Hook - uses Fabric.js viewportTransform
+  const { isPanning } = useCanvasPan()
 
   // Get canvas dimensions and scroll state
-  const canvas = useEditorStore((s) => s.canvas)
   const canvasContainerSize = useEditorStore((s) => s.canvasContainerSize)
   const scrollPosition = useEditorStore((s) => s.scrollPosition)
+  const logicalCanvasSize = useEditorStore((s) => s.logicalCanvasSize)
 
-  // Canvas dimensions
-  const canvasWidth = canvas?.width || 1200
-  const canvasHeight = canvas?.height || 800
-
-  // Scaled dimensions
-  const scaledWidth = canvasWidth * zoom
-  const scaledHeight = canvasHeight * zoom
-
-  // Container dimensions (fallback to reasonable defaults)
-  const containerWidth = canvasContainerSize?.width || 800
-  const containerHeight = canvasContainerSize?.height || 600
-
-  // Dynamic scroll area calculation:
-  // - When zoomed out (canvas smaller than container): scroll area = container size (canvas stays centered, no scrolling needed)
-  // - When zoomed in (canvas larger than container): scroll area = canvas size + container size (allows centering at any position)
-  // This ensures the canvas can always be centered in the viewport
-  const scrollAreaWidth = Math.max(containerWidth, scaledWidth + containerWidth)
-  const scrollAreaHeight = Math.max(
-    containerHeight,
-    scaledHeight + containerHeight
-  )
+  // Canvas dimensions (logical size, not DOM element size)
+  const canvasWidth = logicalCanvasSize.width
+  const canvasHeight = logicalCanvasSize.height
 
   // Always show navigator when canvas container is available
   const showNavigator = canvasContainerSize !== null
 
-  // Handle navigator navigation
-  const handleNavigate = (x: number, y: number) => {
-    const scrollArea = scrollAreaRef.current
-    if (scrollArea) {
-      scrollArea.scrollLeft = x
-      scrollArea.scrollTop = y
-    }
-  }
+  // Handle navigator navigation - uses viewportTransform for panning
+  const handleNavigate = useCallback((panX: number, panY: number) => {
+    const { canvas: currentCanvas } = useEditorStore.getState()
+    if (!currentCanvas) return
 
-  // Initialize scroll position when canvas or zoom changes
-  useEffect(() => {
-    initializeScrollPosition()
-  }, [canvas, initializeScrollPosition])
+    const vpt = currentCanvas.viewportTransform
+    if (vpt) {
+      vpt[4] = -panX
+      vpt[5] = -panY
+      currentCanvas.setViewportTransform(vpt)
+      currentCanvas.requestRenderAll()
+    }
+  }, [])
 
   // Update control point sizes and canvas resolution when zoom changes
   useEffect(() => {
@@ -203,11 +191,15 @@ export default function FabricCanvas() {
     if (!canvasEl.current) return
 
     // Initialize Fabric Canvas v7
-    // Default size - will be overridden by loadFromJSON if dimensions are saved
+    // Get container size for initial canvas dimensions
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    const initialWidth = containerRect?.width || 1200
+    const initialHeight = containerRect?.height || 800
+
     const canvas = new Canvas(canvasEl.current, {
-      width: 1200,
-      height: 800,
-      backgroundColor: "#ffffff",
+      width: initialWidth,
+      height: initialHeight,
+      backgroundColor: "transparent", // Transparent - we render logical canvas with viewportTransform
       fireRightClick: true, // Enable right click events
       stopContextMenu: true, // Prevent default browser context menu
       preserveObjectStacking: true, // Allow selected objects to be behind others visually
@@ -220,6 +212,26 @@ export default function FabricCanvas() {
       canvas.height
     )
 
+    // Add logical canvas background (white rectangle representing the design area)
+    const { logicalCanvasSize } = useEditorStore.getState()
+    const canvasBackground = new Rect({
+      left: 0,
+      top: 0,
+      width: logicalCanvasSize.width,
+      height: logicalCanvasSize.height,
+      fill: "#ffffff",
+      selectable: false,
+      evented: false,
+      excludeFromExport: true, // Don't save to JSON - it's just a visual indicator
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+    // Mark it for special handling
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(canvasBackground as any).isCanvasBackground = true
+    canvas.add(canvasBackground)
+    canvas.sendObjectToBack(canvasBackground)
+
+    // Set canvas to store immediately - Fabric.js v7 DOM initialization is synchronous
     setCanvas(canvas)
 
     // Load existing page content if available (e.g. after remount)
@@ -400,6 +412,8 @@ export default function FabricCanvas() {
     return () => {
       clearTimeout(thumbnailTimeout)
       window.removeEventListener("keydown", handleKeyDown)
+      // Clear store reference before disposing to prevent other effects from accessing disposed canvas
+      setCanvas(null)
       canvas.dispose()
     }
   }, [setCanvas, history, syncLayers])
@@ -986,8 +1000,9 @@ export default function FabricCanvas() {
       nodeIndex: number,
       nodeMode: NodeMode
     ) => {
-      // Get current zoom from store to scale control points inversely
-      const currentZoom = useEditorStore.getState().zoom
+      // Get current zoom from Fabric.js canvas for proper inverse scaling
+      const currentCanvas = useEditorStore.getState().canvas
+      const currentZoom = currentCanvas?.getZoom() || 1
       const baseRadius = type === "anchor" ? 5 : 3
       const baseStrokeWidth = 1
       const basePadding = type === "anchor" ? 10 : 5
@@ -2737,51 +2752,23 @@ export default function FabricCanvas() {
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden bg-zinc-100 dark:bg-zinc-950"
+      style={{
+        cursor: isPanning ? "grabbing" : "default",
+      }}
     >
-      {/* Scrollable area for panning */}
+      {/* Dot Pattern Background - fixed behind canvas */}
       <div
-        ref={scrollAreaRef}
-        className="scrollbar-hidden absolute inset-0 overflow-auto"
+        className="pointer-events-none absolute inset-0 text-zinc-300 opacity-50 dark:text-zinc-700 dark:opacity-20"
         style={{
-          cursor: isPanning ? "grabbing" : "default",
+          backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
+          backgroundSize: "20px 20px",
         }}
-      >
-        {/* Virtual scroll space - 2x canvas size */}
-        <div
-          className="relative"
-          style={{
-            width: scrollAreaWidth,
-            height: scrollAreaHeight,
-          }}
-        >
-          {/* Dot Pattern Background */}
-          <div
-            className="pointer-events-none absolute inset-0 text-zinc-300 opacity-50 dark:text-zinc-700 dark:opacity-20"
-            style={{
-              backgroundImage:
-                "radial-gradient(currentColor 1px, transparent 1px)",
-              backgroundSize: "20px 20px",
-            }}
-          ></div>
+      />
 
-          {/* Canvas wrapper - centered in scroll area */}
-          <div
-            className="absolute z-0 border border-zinc-200 shadow-2xl dark:border-zinc-800"
-            style={{
-              left: "50%",
-              top: "50%",
-              transform: `translate(-50%, -50%) scale(${zoom})`,
-              transformOrigin: "center center",
-              // Force GPU acceleration for better performance
-              willChange: "transform",
-            }}
-          >
-            <canvas ref={canvasEl} />
-          </div>
-        </div>
-      </div>
+      {/* Canvas Element - fills container, zoom/pan handled by Fabric.js viewportTransform */}
+      <canvas ref={canvasEl} />
 
-      {/* Canvas Navigator - shows when canvas exceeds viewport */}
+      {/* Canvas Navigator - shows when canvas container is available */}
       {showNavigator && canvasContainerSize && (
         <CanvasNavigator
           canvasWidth={canvasWidth}
@@ -2791,8 +2778,6 @@ export default function FabricCanvas() {
           containerHeight={canvasContainerSize.height}
           scrollLeft={scrollPosition.x}
           scrollTop={scrollPosition.y}
-          scrollAreaWidth={scrollAreaWidth}
-          scrollAreaHeight={scrollAreaHeight}
           onNavigate={handleNavigate}
         />
       )}

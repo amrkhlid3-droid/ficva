@@ -8,16 +8,18 @@ interface CanvasNavigatorProps {
   zoom: number
   containerWidth: number
   containerHeight: number
-  scrollLeft: number
-  scrollTop: number
-  scrollAreaWidth: number
-  scrollAreaHeight: number
-  onNavigate: (x: number, y: number) => void
+  scrollLeft: number // Actually panX (from viewportTransform)
+  scrollTop: number // Actually panY (from viewportTransform)
+  onNavigate: (panX: number, panY: number) => void
 }
 
 const NAVIGATOR_MAX_WIDTH = 150
 const NAVIGATOR_MAX_HEIGHT = 100
 
+/**
+ * Mini-map navigator for canvas panning.
+ * Works with Fabric.js viewportTransform for pan position.
+ */
 export default function CanvasNavigator({
   canvasWidth,
   canvasHeight,
@@ -26,8 +28,6 @@ export default function CanvasNavigator({
   containerHeight,
   scrollLeft,
   scrollTop,
-  scrollAreaWidth,
-  scrollAreaHeight,
   onNavigate,
 }: CanvasNavigatorProps) {
   const navigatorRef = useRef<HTMLDivElement>(null)
@@ -37,9 +37,11 @@ export default function CanvasNavigator({
   const scaledCanvasWidth = canvasWidth * zoom
   const scaledCanvasHeight = canvasHeight * zoom
 
-  // Use the actual scroll area dimensions passed from parent
-  const totalWidth = scrollAreaWidth
-  const totalHeight = scrollAreaHeight
+  // Total navigable area - canvas size scaled plus some padding for movement
+  // This represents the virtual space the canvas can move within
+  const padding = Math.max(containerWidth, containerHeight)
+  const totalWidth = scaledCanvasWidth + padding * 2
+  const totalHeight = scaledCanvasHeight + padding * 2
 
   // Calculate navigator display dimensions (maintain aspect ratio)
   const aspectRatio = totalWidth / totalHeight
@@ -55,15 +57,17 @@ export default function CanvasNavigator({
   const scaleX = navigatorWidth / totalWidth
   const scaleY = navigatorHeight / totalHeight
 
-  // Canvas rectangle in navigator (centered)
-  const canvasRectX = ((totalWidth - scaledCanvasWidth) / 2) * scaleX
-  const canvasRectY = ((totalHeight - scaledCanvasHeight) / 2) * scaleY
+  // Canvas rectangle position in navigator (centered in the navigable area)
+  const canvasRectX = padding * scaleX
+  const canvasRectY = padding * scaleY
   const canvasRectWidth = scaledCanvasWidth * scaleX
   const canvasRectHeight = scaledCanvasHeight * scaleY
 
-  // Viewport rectangle in navigator
-  const viewportX = scrollLeft * scaleX
-  const viewportY = scrollTop * scaleY
+  // Viewport rectangle position in navigator
+  // scrollLeft/scrollTop represent the negative of viewportTransform[4,5]
+  // When pan is 0, viewport is at the center offset
+  const viewportOffsetX = (padding - scrollLeft) * scaleX
+  const viewportOffsetY = (padding - scrollTop) * scaleY
   const viewportWidth = Math.min(containerWidth, totalWidth) * scaleX
   const viewportHeight = Math.min(containerHeight, totalHeight) * scaleY
 
@@ -77,26 +81,23 @@ export default function CanvasNavigator({
       const clickX = clientX - rect.left
       const clickY = clientY - rect.top
 
-      // Convert to scroll position (center viewport on click point)
-      const newScrollLeft = clickX / scaleX - containerWidth / 2
-      const newScrollTop = clickY / scaleY - containerHeight / 2
+      // Convert click position to pan values
+      // Center the viewport on the clicked point
+      const targetPanX =
+        clickX / scaleX - padding - containerWidth / 2 + scaledCanvasWidth / 2
+      const targetPanY =
+        clickY / scaleY - padding - containerHeight / 2 + scaledCanvasHeight / 2
 
-      // Clamp to valid range
-      const maxScrollLeft = totalWidth - containerWidth
-      const maxScrollTop = totalHeight - containerHeight
-
-      onNavigate(
-        Math.max(0, Math.min(maxScrollLeft, newScrollLeft)),
-        Math.max(0, Math.min(maxScrollTop, newScrollTop))
-      )
+      onNavigate(targetPanX, targetPanY)
     },
     [
       scaleX,
       scaleY,
+      padding,
       containerWidth,
       containerHeight,
-      totalWidth,
-      totalHeight,
+      scaledCanvasWidth,
+      scaledCanvasHeight,
       onNavigate,
     ]
   )
@@ -160,8 +161,8 @@ export default function CanvasNavigator({
       <div
         className="border-primary bg-primary/20 absolute border-2"
         style={{
-          left: viewportX,
-          top: viewportY,
+          left: viewportOffsetX,
+          top: viewportOffsetY,
           width: viewportWidth,
           height: viewportHeight,
         }}

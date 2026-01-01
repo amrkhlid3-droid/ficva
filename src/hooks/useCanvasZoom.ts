@@ -1,16 +1,20 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
+import { Point } from "fabric"
 import { useEditorStore } from "@/store/useEditorStore"
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5.0
 const ZOOM_STEP = 0.1
 
-export function useCanvasZoom(
-  containerRef: React.RefObject<HTMLDivElement>,
-  scrollAreaRef?: React.RefObject<HTMLDivElement>
-) {
+/**
+ * Hook for canvas zoom operations using Fabric.js native zoom API.
+ *
+ * Uses canvas.setZoom() and canvas.zoomToPoint() for high-quality vector rendering
+ * instead of CSS transform which causes blurry graphics at high zoom levels.
+ */
+export function useCanvasZoom(containerRef: React.RefObject<HTMLDivElement>) {
   const {
     canvas,
     zoom,
@@ -24,38 +28,51 @@ export function useCanvasZoom(
 
   const initialFitDoneRef = useRef(false)
 
-  // Helper function to calculate scroll area dimensions
-  const calcScrollAreaSize = useCallback(
-    (zoomLevel: number, canvasW: number, canvasH: number) => {
-      const { canvasContainerSize } = useEditorStore.getState()
-      const containerW = canvasContainerSize?.width || 800
-      const containerH = canvasContainerSize?.height || 600
-      const scaledW = canvasW * zoomLevel
-      const scaledH = canvasH * zoomLevel
-      return {
-        width: Math.max(containerW, scaledW + containerW),
-        height: Math.max(containerH, scaledH + containerH),
-        containerW,
-        containerH,
-        scaledW,
-        scaledH,
-      }
-    },
-    []
-  )
+  /**
+   * Center the canvas in the viewport at the given zoom level.
+   * Uses logicalCanvasSize for the content dimensions.
+   */
+  const centerCanvas = useCallback((zoomLevel: number) => {
+    const {
+      canvas: currentCanvas,
+      canvasContainerSize,
+      logicalCanvasSize,
+    } = useEditorStore.getState()
+    if (!currentCanvas || !canvasContainerSize) return
 
-  // Handle wheel zoom (Ctrl/Cmd + scroll) - centers on mouse position
+    const canvasWidth = logicalCanvasSize.width
+    const canvasHeight = logicalCanvasSize.height
+
+    // Calculate center position so canvas is centered in container
+    const centerX = (canvasContainerSize.width - canvasWidth * zoomLevel) / 2
+    const centerY = (canvasContainerSize.height - canvasHeight * zoomLevel) / 2
+
+    // Set viewport transform: [scaleX, skewY, skewX, scaleY, translateX, translateY]
+    currentCanvas.setViewportTransform([
+      zoomLevel,
+      0,
+      0,
+      zoomLevel,
+      centerX,
+      centerY,
+    ])
+    currentCanvas.requestRenderAll()
+  }, [])
+
+  /**
+   * Handle wheel zoom (Ctrl/Cmd + scroll) - centers on mouse position.
+   * Uses Fabric.js zoomToPoint to keep mouse position stable during zoom.
+   */
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
 
       e.preventDefault()
 
-      const scrollArea = scrollAreaRef?.current
-      if (!scrollArea) return
-
       const { zoom: currentZoom, canvas: currentCanvas } =
         useEditorStore.getState()
+      if (!currentCanvas) return
+
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
       const newZoom = Math.max(
         MIN_ZOOM,
@@ -64,69 +81,20 @@ export function useCanvasZoom(
 
       if (newZoom === currentZoom) return
 
-      // Get canvas dimensions
-      const canvasWidth = currentCanvas?.width || 1200
-      const canvasHeight = currentCanvas?.height || 800
+      // Get mouse position relative to canvas element
+      const canvasElement = currentCanvas.getElement()
+      const rect = canvasElement.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
 
-      // Get mouse position relative to scroll area
-      const scrollAreaRect = scrollArea.getBoundingClientRect()
-      const mouseX = e.clientX - scrollAreaRect.left
-      const mouseY = e.clientY - scrollAreaRect.top
+      // Use Fabric.js zoomToPoint to zoom centered on mouse position
+      const point = new Point(mouseX, mouseY)
+      currentCanvas.zoomToPoint(point, newZoom)
 
-      // Current scroll position
-      const scrollLeft = scrollArea.scrollLeft
-      const scrollTop = scrollArea.scrollTop
-
-      // Calculate old and new scroll area dimensions
-      const oldSize = calcScrollAreaSize(currentZoom, canvasWidth, canvasHeight)
-      const newSize = calcScrollAreaSize(newZoom, canvasWidth, canvasHeight)
-
-      // Mouse position in the virtual scroll space (before zoom)
-      const virtualX = scrollLeft + mouseX
-      const virtualY = scrollTop + mouseY
-
-      // Canvas center position in the old scroll area
-      const oldCenterX = oldSize.width / 2
-      const oldCenterY = oldSize.height / 2
-
-      // Distance from mouse to canvas center in the old zoom
-      const distFromCenterX = virtualX - oldCenterX
-      const distFromCenterY = virtualY - oldCenterY
-
-      // Scale this distance by the zoom ratio
-      const zoomRatio = newZoom / currentZoom
-      const newDistFromCenterX = distFromCenterX * zoomRatio
-      const newDistFromCenterY = distFromCenterY * zoomRatio
-
-      // Canvas center position in the new scroll area
-      const newCenterX = newSize.width / 2
-      const newCenterY = newSize.height / 2
-
-      // New virtual position of the mouse
-      const newVirtualX = newCenterX + newDistFromCenterX
-      const newVirtualY = newCenterY + newDistFromCenterY
-
-      // New scroll position to keep mouse at same screen position
-      const newScrollLeft = newVirtualX - mouseX
-      const newScrollTop = newVirtualY - mouseY
-
-      // Apply zoom first
       applyZoom(newZoom)
       setZoomMode("custom")
-
-      // Then adjust scroll position after a microtask to ensure DOM is updated
-      requestAnimationFrame(() => {
-        scrollArea.scrollLeft = Math.max(
-          0,
-          Math.min(newSize.width - scrollArea.clientWidth, newScrollLeft)
-        )
-        scrollArea.scrollTop = Math.max(
-          0,
-          Math.min(newSize.height - scrollArea.clientHeight, newScrollTop)
-        )
-      })
     },
-    [scrollAreaRef, applyZoom, setZoomMode, calcScrollAreaSize]
+    [applyZoom, setZoomMode]
   )
 
   // Attach wheel event listener
@@ -141,16 +109,21 @@ export function useCanvasZoom(
     }
   }, [containerRef, handleWheel])
 
-  // Zoom to fit and center - local implementation that handles scroll positioning
+  /**
+   * Zoom to fit the canvas within the container with padding.
+   * Centers the canvas after fitting.
+   */
   const zoomToFitAndCenter = useCallback(() => {
-    const scrollArea = scrollAreaRef?.current
-    const { canvas: currentCanvas, canvasContainerSize } =
-      useEditorStore.getState()
+    const {
+      canvas: currentCanvas,
+      canvasContainerSize,
+      logicalCanvasSize,
+    } = useEditorStore.getState()
 
     if (!currentCanvas || !canvasContainerSize) return
 
-    const canvasWidth = currentCanvas.width || 1200
-    const canvasHeight = currentCanvas.height || 800
+    const canvasWidth = logicalCanvasSize.width
+    const canvasHeight = logicalCanvasSize.height
     const padding = 40
 
     const availableWidth = canvasContainerSize.width - padding * 2
@@ -167,54 +140,30 @@ export function useCanvasZoom(
     applyZoom(fitZoom)
     setZoomMode("fit")
 
-    // Center the scroll position after zoom is applied
-    if (scrollArea) {
-      requestAnimationFrame(() => {
-        const newSize = calcScrollAreaSize(fitZoom, canvasWidth, canvasHeight)
-        const newScrollLeft = (newSize.width - scrollArea.clientWidth) / 2
-        const newScrollTop = (newSize.height - scrollArea.clientHeight) / 2
+    // Center the canvas at the fit zoom level
+    centerCanvas(fitZoom)
+  }, [applyZoom, setZoomMode, centerCanvas])
 
-        scrollArea.scrollLeft = Math.max(0, newScrollLeft)
-        scrollArea.scrollTop = Math.max(0, newScrollTop)
-      })
-    }
-  }, [scrollAreaRef, applyZoom, setZoomMode, calcScrollAreaSize])
-
-  // Center-first zoom for slider and reset - centers the canvas, then applies zoom
+  /**
+   * Zoom to a specific level and center the canvas.
+   * Used for zoom slider and preset zoom levels (100%, etc.)
+   */
   const centerAndZoom = useCallback(
     (newZoom: number) => {
-      const scrollArea = scrollAreaRef?.current
-      if (!scrollArea) {
-        // Fallback: just apply zoom without centering
-        applyZoom(newZoom)
-        setZoomMode("custom")
-        return
-      }
+      const clampedZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom))
 
-      const { canvas: currentCanvas } = useEditorStore.getState()
-      const canvasWidth = currentCanvas?.width || 1200
-      const canvasHeight = currentCanvas?.height || 800
-
-      // Apply the new zoom
-      applyZoom(newZoom)
+      applyZoom(clampedZoom)
       setZoomMode("custom")
 
-      // Center the scroll position after zoom is applied
-      requestAnimationFrame(() => {
-        const newSize = calcScrollAreaSize(newZoom, canvasWidth, canvasHeight)
-
-        // Center the scroll position - canvas is always at center of scroll area
-        const newScrollLeft = (newSize.width - scrollArea.clientWidth) / 2
-        const newScrollTop = (newSize.height - scrollArea.clientHeight) / 2
-
-        scrollArea.scrollLeft = Math.max(0, newScrollLeft)
-        scrollArea.scrollTop = Math.max(0, newScrollTop)
-      })
+      // Center the canvas at the new zoom level
+      centerCanvas(clampedZoom)
     },
-    [scrollAreaRef, applyZoom, setZoomMode, calcScrollAreaSize]
+    [applyZoom, setZoomMode, centerCanvas]
   )
 
-  // Handle keyboard shortcuts
+  /**
+   * Handle keyboard shortcuts for zoom
+   */
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const isCtrlOrMeta = e.ctrlKey || e.metaKey
@@ -222,13 +171,17 @@ export function useCanvasZoom(
       // Ctrl/Cmd + Plus: Zoom In
       if (isCtrlOrMeta && (e.key === "+" || e.key === "=")) {
         e.preventDefault()
-        zoomIn()
+        const { zoom: currentZoom } = useEditorStore.getState()
+        const newZoom = Math.min(MAX_ZOOM, currentZoom + ZOOM_STEP)
+        centerAndZoom(newZoom)
       }
 
       // Ctrl/Cmd + Minus: Zoom Out
       if (isCtrlOrMeta && e.key === "-") {
         e.preventDefault()
-        zoomOut()
+        const { zoom: currentZoom } = useEditorStore.getState()
+        const newZoom = Math.max(MIN_ZOOM, currentZoom - ZOOM_STEP)
+        centerAndZoom(newZoom)
       }
 
       // Ctrl/Cmd + 0: Fit to screen
@@ -243,7 +196,7 @@ export function useCanvasZoom(
         centerAndZoom(1.0)
       }
     },
-    [zoomIn, zoomOut, zoomToFitAndCenter, centerAndZoom]
+    [zoomToFitAndCenter, centerAndZoom]
   )
 
   // Attach keyboard event listener
@@ -262,15 +215,39 @@ export function useCanvasZoom(
 
     const updateSize = () => {
       const rect = container.getBoundingClientRect()
+      // Skip if container has no size yet
+      if (rect.width === 0 || rect.height === 0) return
+
       setCanvasContainerSize({ width: rect.width, height: rect.height })
 
+      const {
+        canvas: currentCanvas,
+        zoom: currentZoom,
+        zoomMode: currentZoomMode,
+      } = useEditorStore.getState()
+
+      // Resize canvas element to match container (only if canvas is ready)
+      if (currentCanvas) {
+        try {
+          currentCanvas.setDimensions({
+            width: rect.width,
+            height: rect.height,
+          })
+        } catch {
+          // Canvas not fully initialized yet, skip resize
+          console.log("[useCanvasZoom] Canvas not ready for resize, skipping")
+        }
+      }
+
       // If in fit mode, recalculate zoom on resize
-      const { zoomMode: currentZoomMode } = useEditorStore.getState()
       if (currentZoomMode === "fit" && initialFitDoneRef.current) {
         // Defer to next tick to ensure size is updated
         setTimeout(() => {
           zoomToFitAndCenter()
         }, 0)
+      } else if (initialFitDoneRef.current) {
+        // Re-center at current zoom
+        centerCanvas(currentZoom)
       }
     }
 
@@ -287,7 +264,7 @@ export function useCanvasZoom(
     return () => {
       resizeObserver.disconnect()
     }
-  }, [containerRef, setCanvasContainerSize, zoomToFitAndCenter])
+  }, [containerRef, setCanvasContainerSize, zoomToFitAndCenter, centerCanvas])
 
   // Auto-fit on initial load
   useEffect(() => {
@@ -319,8 +296,7 @@ export function useCanvasZoom(
     },
     centerAndZoom,
     resetZoom: () => {
-      applyZoom(1.0)
-      setZoomMode("custom")
+      centerAndZoom(1.0)
     },
   }
 }

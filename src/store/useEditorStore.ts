@@ -44,6 +44,7 @@ interface EditorState {
   zoom: number // Current zoom level (0.1 to 5.0, representing 10% to 500%)
   zoomMode: "fit" | "custom" // "fit" = auto-fit to container, "custom" = user-defined
   canvasContainerSize: { width: number; height: number } | null // Container dimensions for zoom calculations
+  logicalCanvasSize: { width: number; height: number } // Logical canvas content size (default 1200x800)
 
   // Pan State
   isPanning: boolean // Whether middle-mouse drag is active
@@ -82,6 +83,7 @@ interface EditorActions {
   setZoom: (zoom: number) => void
   setZoomMode: (mode: "fit" | "custom") => void
   setCanvasContainerSize: (size: { width: number; height: number }) => void
+  setLogicalCanvasSize: (size: { width: number; height: number }) => void
   zoomIn: () => void
   zoomOut: () => void
   zoomToFit: () => void
@@ -130,6 +132,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     zoom: 1.0,
     zoomMode: "fit",
     canvasContainerSize: null,
+    logicalCanvasSize: { width: 1200, height: 800 },
 
     // Pan Defaults
     isPanning: false,
@@ -201,11 +204,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((
             (obj.type === "group" &&
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (obj as any)._isActiveSelection) ||
-            // Ignore objects marked for exclusion (controls, ghost paths)
+            // Ignore objects marked for exclusion (controls, ghost paths, canvas background)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (obj as any).excludeFromExport ||
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (obj as any).isGhost
+            (obj as any).isGhost ||
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (obj as any).isCanvasBackground
           ) {
             return
           }
@@ -461,6 +466,8 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     setCanvasContainerSize: (canvasContainerSize) =>
       set({ canvasContainerSize }),
 
+    setLogicalCanvasSize: (logicalCanvasSize) => set({ logicalCanvasSize }),
+
     zoomIn: () => {
       const { zoom } = get()
       const newZoom = Math.min(5.0, zoom + 0.1)
@@ -476,11 +483,11 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     },
 
     zoomToFit: () => {
-      const { canvas, canvasContainerSize } = get()
+      const { canvas, canvasContainerSize, logicalCanvasSize } = get()
       if (!canvas || !canvasContainerSize) return
 
-      const canvasWidth = canvas.width || 1200
-      const canvasHeight = canvas.height || 800
+      const canvasWidth = logicalCanvasSize.width
+      const canvasHeight = logicalCanvasSize.height
       const padding = 40
 
       const availableWidth = canvasContainerSize.width - padding * 2
