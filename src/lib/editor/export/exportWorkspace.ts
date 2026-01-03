@@ -94,6 +94,10 @@ function downloadFile(content: string | Blob, filename: string): void {
 
 /**
  * 导出为图片格式（PNG/JPEG）
+ *
+ * 【重要】
+ * 此函数会临时重置 viewport transform 为单位矩阵，
+ * 确保 toDataURL 的裁剪坐标正确对应 canvas 坐标系。
  */
 function exportAsImage(
   canvas: Canvas,
@@ -119,15 +123,28 @@ function exportAsImage(
 
   canvas.requestRenderAll()
 
+  // 保存当前 viewport transform
+  const originalTransform = canvas.viewportTransform?.slice() as
+    | [number, number, number, number, number, number]
+    | undefined
+
+  // 临时重置为单位矩阵（无缩放、无平移）
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0])
+
   const dataURL = canvas.toDataURL({
     format,
     quality: options.quality,
     multiplier: options.multiplier,
-    left: workspace.left,
-    top: workspace.top,
-    width: workspace.width,
-    height: workspace.height,
+    left: workspace.left ?? 0,
+    top: workspace.top ?? 0,
+    width: workspace.width ?? 1200,
+    height: workspace.height ?? 800,
   })
+
+  // 恢复原始 viewport transform
+  if (originalTransform) {
+    canvas.setViewportTransform(originalTransform)
+  }
 
   // 恢复 workspace 原始状态
   workspace.set({

@@ -3,6 +3,11 @@ import { create } from "zustand"
 import type { Canvas, FabricObject } from "fabric"
 import { HistoryManager } from "@/lib/editor/history/HistoryManager"
 import { fixPathObjectsAfterLoad } from "@/lib/editor/utils/CanvasUtils"
+import {
+  MIN_ZOOM,
+  MAX_ZOOM,
+  ZOOM_STEP,
+} from "@/lib/editor/utils/canvasViewport"
 
 export interface Page {
   id: string
@@ -41,7 +46,7 @@ interface EditorState {
   editingPath: FabricObject | null
 
   // Zoom State
-  zoom: number // Current zoom level (0.1 to 5.0, representing 10% to 500%)
+  zoom: number // Current zoom level (0.1 to 10.0, representing 10% to 1000%)
   /**
    * 缩放模式：
    * - "fit": 自适应 workspace 到屏幕（Ctrl+1）
@@ -441,7 +446,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     // --- Zoom Actions ---
 
     setZoom: (zoom) => {
-      const clampedZoom = Math.max(0.1, Math.min(5.0, zoom))
+      const clampedZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))
       set({ zoom: clampedZoom })
     },
 
@@ -454,14 +459,14 @@ export const useEditorStore = create<EditorState & EditorActions>()((
 
     zoomIn: () => {
       const { zoom } = get()
-      const newZoom = Math.min(5.0, zoom + 0.1)
+      const newZoom = Math.min(MAX_ZOOM, zoom + ZOOM_STEP)
       get().applyZoom(newZoom)
       set({ zoomMode: "custom" })
     },
 
     zoomOut: () => {
       const { zoom } = get()
-      const newZoom = Math.max(0.1, zoom - 0.1)
+      const newZoom = Math.max(MIN_ZOOM, zoom - ZOOM_STEP)
       get().applyZoom(newZoom)
       set({ zoomMode: "custom" })
     },
@@ -480,14 +485,17 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       const scaleX = availableWidth / canvasWidth
       const scaleY = availableHeight / canvasHeight
 
-      const fitZoom = Math.max(0.1, Math.min(5.0, Math.min(scaleX, scaleY)))
+      const fitZoom = Math.max(
+        MIN_ZOOM,
+        Math.min(MAX_ZOOM, Math.min(scaleX, scaleY))
+      )
 
       get().applyZoom(fitZoom)
       set({ zoomMode: "fit" })
     },
 
     applyZoom: (zoom) => {
-      const clampedZoom = Math.max(0.1, Math.min(5.0, zoom))
+      const clampedZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))
       set({ zoom: clampedZoom })
     },
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { useEditorStore } from "@/store/useEditorStore"
-import { findWorkspace } from "@/lib/editor/workspace"
+import { generateWorkspaceThumbnail } from "@/lib/editor/workspace"
 
 export interface SnapshotOptions {
   /** Debounce delay in milliseconds (default: 200) */
@@ -88,25 +88,21 @@ export function useCanvasSnapshot(options: SnapshotOptions = {}) {
           return
         }
 
-        // 1. 查找 workspace 获取边界框
-        const workspace = findWorkspace(canvas)
-        if (!workspace) {
+        // 1. Generate Thumbnail - 只截取 workspace 区域
+        // 使用 generateWorkspaceThumbnail 确保正确处理 viewport transform
+        const dataURL = generateWorkspaceThumbnail(canvas, {
+          format: "png",
+          quality,
+          multiplier,
+        })
+
+        if (!dataURL) {
+          // workspace 不存在
           snapshotContextRef.current = null
           return
         }
 
-        // 2. Generate Thumbnail - 只截取 workspace 区域
-        const dataURL = canvas.toDataURL({
-          format: "png",
-          quality,
-          multiplier,
-          left: workspace.left,
-          top: workspace.top,
-          width: workspace.width,
-          height: workspace.height,
-        })
-
-        // 3. Generate JSON with custom properties
+        // 2. Generate JSON with custom properties
         const json = canvas.toObject([
           "id",
           "selectable",

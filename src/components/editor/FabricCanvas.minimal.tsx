@@ -8,8 +8,17 @@ import {
   useCanvasWorkspace,
   useInitialCanvasSave,
   useCanvasSnapshot,
+  useCanvasWorkspaceAutoFit,
+  useCanvasZoom,
+  // Navigation Controls - Pluggable Modules
+  useZoomShortcuts,
+  useWheelZoom,
+  useWheelPanVertical,
+  useWheelPanHorizontal,
+  useMiddleMousePan,
 } from "@/hooks/canvas"
 import { debugFabricCanvasMinimal as debug } from "@/lib/editor/utils/debug"
+import ZoomControls from "./ZoomControls"
 
 /**
  * FabricCanvas.minimal - 最小化调试版本
@@ -39,6 +48,31 @@ export default function FabricCanvasMinimal() {
 
   // 模块化：画布快照（监听对象变化，同步到 pages store，触发自动保存）
   useCanvasSnapshot()
+
+  // 模块化：Workspace 尺寸变化后自动居中缩放（可选，注释掉即可禁用）
+  useCanvasWorkspaceAutoFit()
+
+  // 模块化：缩放控制（核心 API，供 ZoomControls 使用）
+  const { zoom, zoomMode, zoomIn, zoomOut, zoomToFit, centerAndZoom } =
+    useCanvasZoom(containerRef)
+
+  // ========== 导航控制模块（可插拔） ==========
+  // 每个模块独立，注释掉即可禁用
+
+  // Shift+1/2/3 缩放模式快捷键
+  useZoomShortcuts()
+
+  // Ctrl+滚轮缩放（以鼠标为中心）
+  useWheelZoom(containerRef)
+
+  // 滚轮纵向平移（workspace 超出视口时生效）
+  useWheelPanVertical(containerRef)
+
+  // Shift+滚轮横向平移（workspace 超出视口时生效）
+  useWheelPanHorizontal(containerRef)
+
+  // 鼠标中键拖拽平移
+  useMiddleMousePan()
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -114,6 +148,16 @@ export default function FabricCanvasMinimal() {
     >
       {/* 点阵背景 - 使用主题默认填充色（浅色: #e5e5e5, 深色: #404040） */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#e5e5e5_1px,transparent_1px)] bg-size-[20px_20px] dark:bg-[radial-gradient(#404040_1px,transparent_1px)]" />
+
+      {/* 缩放控制栏 */}
+      <ZoomControls
+        zoom={zoom}
+        zoomMode={zoomMode}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onZoomChange={centerAndZoom}
+        onZoomToFit={zoomToFit}
+      />
     </div>
   )
 }

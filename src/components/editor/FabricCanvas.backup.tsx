@@ -30,7 +30,7 @@ import {
 } from "@/lib/editor/handleTransform"
 import { DeleteNodeDialog } from "./DeleteNodeDialog"
 import { useCanvasZoom } from "@/hooks/useCanvasZoom"
-import { useCanvasPan } from "@/hooks/useCanvasPan"
+import { useMiddleMousePan } from "@/hooks/canvas/useMiddleMousePan"
 import ZoomControls from "./ZoomControls"
 import CanvasNavigator from "./CanvasNavigator"
 
@@ -88,7 +88,7 @@ export default function FabricCanvas() {
     useCanvasZoom(containerRef)
 
   // Pan Hook - uses Fabric.js viewportTransform
-  const { isPanning } = useCanvasPan()
+  const { isPanning } = useMiddleMousePan()
 
   // Get canvas dimensions and scroll state
   const canvasContainerSize = useEditorStore((s) => s.canvasContainerSize)

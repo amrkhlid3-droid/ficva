@@ -38,7 +38,8 @@ import {
   useCanvasKeyboard,
   useCanvasDrawingMode,
   useCanvasZoom,
-  useCanvasPan,
+  useMiddleMousePan,
+  useCanvasWorkspaceAutoFit,
 } from "@/hooks/canvas"
 
 // Restore PathCommand type for legacy support / Fabric compatibility
@@ -86,7 +87,7 @@ interface EditablePath extends Path {
  * - useCanvasKeyboard: Keyboard shortcuts | 键盘快捷键
  * - useCanvasDrawingMode: Drawing mode sync | 绘图模式同步
  * - useCanvasZoom: Zoom controls | 缩放控制
- * - useCanvasPan: Pan controls | 平移控制
+ * - useMiddleMousePan: Middle mouse pan controls | 中键平移控制
  *
  * Inline Logic (too complex to modularize) | 内联逻辑（过于复杂无法模块化）:
  * - Pen Tool: Bezier path creation | 钢笔工具：贝塞尔路径创建
@@ -124,11 +125,15 @@ export default function FabricCanvas() {
   useCanvasDrawingMode()
 
   // Zoom controls | 缩放控制
-  const { zoom, zoomIn, zoomOut, zoomToFit, centerAndZoom } =
+  const { zoom, zoomMode, zoomIn, zoomOut, zoomToFit, centerAndZoom } =
     useCanvasZoom(containerRef)
 
   // Pan controls | 平移控制
-  const { isPanning } = useCanvasPan()
+  const { isPanning } = useMiddleMousePan()
+
+  // Workspace auto-fit (respond to workspace size changes)
+  // Workspace 尺寸变化后自动居中缩放
+  useCanvasWorkspaceAutoFit()
 
   // ========================================
   // Component State | 组件状态
@@ -1833,6 +1838,7 @@ export default function FabricCanvas() {
       {/* Zoom Controls */}
       <ZoomControls
         zoom={zoom}
+        zoomMode={zoomMode}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onZoomChange={centerAndZoom}

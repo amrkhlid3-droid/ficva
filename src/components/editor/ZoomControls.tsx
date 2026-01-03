@@ -14,11 +14,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
-const ZOOM_PRESETS = [10, 25, 50, 75, 100, 125, 150, 200, 300, 400, 500]
+const ZOOM_PRESETS = [
+  10, 25, 50, 75, 100, 125, 150, 200, 300, 400, 500, 800, 1000,
+]
 
 interface ZoomControlsProps {
   zoom: number
+  /** 当前缩放模式 */
+  zoomMode?: "fit" | "100%" | "focus" | "custom"
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomChange: (zoom: number) => void
@@ -27,12 +32,14 @@ interface ZoomControlsProps {
 
 export default function ZoomControls({
   zoom,
+  zoomMode = "custom",
   onZoomIn,
   onZoomOut,
   onZoomChange,
   onZoomToFit,
 }: ZoomControlsProps) {
   const displayZoom = Math.round(zoom * 100)
+  const isFitMode = zoomMode === "fit"
 
   const handleSliderChange = (value: number[]) => {
     const newZoom = (value[0] ?? 100) / 100
@@ -69,7 +76,7 @@ export default function ZoomControls({
           <Slider
             value={[displayZoom]}
             min={10}
-            max={500}
+            max={1000}
             step={5}
             className="w-32"
             onValueChange={handleSliderChange}
@@ -83,7 +90,7 @@ export default function ZoomControls({
                 size="icon"
                 className="h-7 w-7"
                 onClick={onZoomIn}
-                disabled={zoom >= 5}
+                disabled={zoom >= 10}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -121,16 +128,19 @@ export default function ZoomControls({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                variant="ghost"
+                variant={isFitMode ? "default" : "ghost"}
                 size="icon"
-                className="h-7 w-7"
+                className={cn(
+                  "h-7 w-7",
+                  isFitMode && "bg-primary text-primary-foreground"
+                )}
                 onClick={onZoomToFit}
               >
                 <Maximize2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <p>Fit to screen (Ctrl+0)</p>
+              <p>Fit to screen (Shift+1)</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

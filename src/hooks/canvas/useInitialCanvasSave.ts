@@ -30,7 +30,7 @@
 import { useEffect, useRef } from "react"
 import { useEditorStore } from "@/store/useEditorStore"
 import { debugInitialCanvasSave as debug } from "@/lib/editor/utils/debug"
-import { findWorkspace } from "@/lib/editor/workspace"
+import { generateWorkspaceThumbnail } from "@/lib/editor/workspace"
 
 /**
  * Hook: 初始化完成后主动保存 Canvas JSON
@@ -135,24 +135,19 @@ export function useInitialCanvasSave() {
         json.backgroundColor = canvas.backgroundColor
       }
 
-      // 查找 workspace 获取边界框
-      const workspace = findWorkspace(canvas)
-      if (!workspace) {
+      // 生成缩略图 - 只截取 workspace 区域
+      // 使用 generateWorkspaceThumbnail 确保正确处理 viewport transform
+      const thumbnail = generateWorkspaceThumbnail(canvas, {
+        format: "png",
+        quality: 0.8,
+        multiplier: 0.5,
+      })
+
+      if (!thumbnail) {
         debug.warn("Workspace not found, skipping initial save")
         debug.groupEnd()
         return
       }
-
-      // 生成缩略图 - 只截取 workspace 区域
-      const thumbnail = canvas.toDataURL({
-        format: "png",
-        quality: 0.8,
-        multiplier: 0.5,
-        left: workspace.left,
-        top: workspace.top,
-        width: workspace.width,
-        height: workspace.height,
-      })
 
       // 更新 Store（这会触发 useAutoSave 保存到服务器）
       updatePage(activePageId, { json, thumbnail })

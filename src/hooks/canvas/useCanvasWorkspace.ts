@@ -99,9 +99,11 @@ export function useCanvasWorkspace({
     // 使用固定的默认尺寸 1200x800（或用户配置的尺寸）
     const workspaceWidth = defaultWidth
     const workspaceHeight = defaultHeight
-    // 居中放置
-    const left = (containerWidth - workspaceWidth) / 2
-    const top = (containerHeight - workspaceHeight) / 2
+
+    // workspace 始终从 (0, 0) 开始，通过 viewportTransform 来实现居中
+    // 这样 centerWorkspace 函数可以正确计算平移量
+    const left = 0
+    const top = 0
 
     // 创建新的 workspace（不设置 excludeFromExport，会被保存到 JSON）
     const newWorkspace = new Rect({
@@ -152,11 +154,18 @@ export function useCanvasWorkspace({
     let workspace = findWorkspace(canvas)
 
     if (workspace) {
-      // workspace 已存在（可能从 JSON 加载），只更新边框颜色（主题相关）
+      // workspace 已存在（可能从 JSON 加载），更新样式和确保不可选中
       // 不修改尺寸和位置，保留用户的设置
       workspace.set({
         stroke: getBorderColor(),
         strokeWidth: borderWidth,
+        // 确保从 JSON 加载后仍然不可选中、不响应事件
+        selectable: false,
+        evented: false,
+        hasControls: false,
+        hasBorders: false,
+        lockMovementX: true,
+        lockMovementY: true,
       })
       debugLog("✅ 使用已有 workspace (从 JSON 加载):", {
         width: workspace.width,

@@ -1,57 +1,45 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useEffect, useRef } from "react"
 import { useEditorStore } from "@/store/useEditorStore"
 
 /**
- * Hook for canvas panning using Fabric.js viewportTransform.
+ * useMiddleMousePan - 鼠标中键拖拽平移模块（可插拔）
  *
- * Supports two panning methods:
- * 1. Middle mouse button drag
- * 2. Alt + left mouse button drag
+ * 行为：
+ * - 按住中键拖拽：平移画布
+ * - 松开中键：停止平移
  *
- * Uses viewportTransform[4] (panX) and viewportTransform[5] (panY) for panning,
- * which works seamlessly with Fabric.js native zoom.
+ * 注意：不支持 Alt+左键（已移除）
+ *
+ * 启用：useMiddleMousePan()
+ * 禁用：注释掉调用
  */
-export function useCanvasPan() {
-  const { canvas, isPanning, setIsPanning, setScrollPosition } =
-    useEditorStore()
+export function useMiddleMousePan() {
+  const canvas = useEditorStore((s) => s.canvas)
+  const setIsPanning = useEditorStore((s) => s.setIsPanning)
+  const isPanning = useEditorStore((s) => s.isPanning)
 
   const isDraggingRef = useRef(false)
   const lastPosRef = useRef({ x: 0, y: 0 })
   const listenersAttachedRef = useRef(false)
 
-  // Update store scroll position from viewportTransform
-  const syncScrollPosition = useCallback(() => {
-    const { canvas: currentCanvas } = useEditorStore.getState()
-    if (!currentCanvas) return
-
-    const vpt = currentCanvas.viewportTransform
-    if (vpt) {
-      setScrollPosition({ x: -vpt[4], y: -vpt[5] })
-    }
-  }, [setScrollPosition])
-
   useEffect(() => {
     if (!canvas) return
 
-    // Try to get the lower canvas element - if DOM isn't ready, this will fail
-    // In Fabric.js v7, lowerCanvasEl is a getter that accesses internal DOM manager
+    // Try to get the lower canvas element
     let canvasElement: HTMLCanvasElement | null = null
     try {
-      // Access the lower canvas element directly
       canvasElement = canvas.lowerCanvasEl
     } catch {
       // DOM not ready yet
     }
 
-    // If we can't get the canvas element, wait for the first render
     if (!canvasElement) {
+      // Wait for first render
       const handleAfterRender = () => {
-        // Re-run this effect after first render
         canvas.off("after:render", handleAfterRender)
-        // Force re-evaluation by triggering a state update
-        setIsPanning(false)
+        setIsPanning(false) // Force re-evaluation
       }
       canvas.on("after:render", handleAfterRender)
       return () => {
@@ -67,11 +55,8 @@ export function useCanvasPan() {
     listenersAttachedRef.current = true
 
     const handleMouseDown = (e: MouseEvent) => {
-      // Middle mouse button (button === 1) OR Alt + left mouse button
-      const isMiddleButton = e.button === 1
-      const isAltLeftButton = e.altKey && e.button === 0
-
-      if (!isMiddleButton && !isAltLeftButton) return
+      // 只响应中键（button === 1），不支持 Alt+左键
+      if (e.button !== 1) return
 
       e.preventDefault()
       e.stopPropagation()
@@ -108,9 +93,6 @@ export function useCanvasPan() {
       isDraggingRef.current = false
       canvas.selection = true
       setIsPanning(false)
-
-      // Sync scroll position to store
-      syncScrollPosition()
     }
 
     // Prevent default middle-click behavior (auto-scroll)
@@ -133,7 +115,7 @@ export function useCanvasPan() {
       canvasWrapper.removeEventListener("auxclick", preventMiddleClick)
       listenersAttachedRef.current = false
     }
-  }, [canvas, setIsPanning, syncScrollPosition])
+  }, [canvas, setIsPanning])
 
   return {
     isPanning,

@@ -24,6 +24,13 @@
  *   useCanvasPenTool()
  *   useCanvasPathEdit()
  *
+ *   // Navigation controls (pluggable)
+ *   useZoomShortcuts()           // Shift+1/2/3 zoom mode shortcuts
+ *   useWheelZoom(containerRef)   // Ctrl+wheel zoom
+ *   useWheelPanVertical(containerRef)   // Wheel vertical pan
+ *   useWheelPanHorizontal(containerRef) // Shift+wheel horizontal pan
+ *   useMiddleMousePan()          // Middle mouse drag pan
+ *
  *   return (
  *     <div ref={containerRef}>
  *       <canvas ref={canvasRef} />
@@ -45,8 +52,14 @@
  *     ├── useCanvasDrawingMode
  *     ├── useCanvasPenTool
  *     ├── useCanvasPathEdit
- *     ├── useCanvasZoom (existing)
- *     └── useCanvasPan (existing)
+ *     ├── useCanvasZoom (core zoom API)
+ *     │
+ *     └── Navigation Controls (pluggable)
+ *         ├── useZoomShortcuts (Shift+1/2/3)
+ *         ├── useWheelZoom (Ctrl+wheel)
+ *         ├── useWheelPanVertical (wheel)
+ *         ├── useWheelPanHorizontal (Shift+wheel)
+ *         └── useMiddleMousePan (middle mouse drag)
  * ```
  */
 
@@ -91,6 +104,26 @@ export type {
 // Initial save (save JSON after initialization for empty pages)
 export { useInitialCanvasSave } from "./useInitialCanvasSave"
 
-// Re-export existing hooks for convenience
+// Workspace auto-fit (respond to workspace size changes)
+export { useCanvasWorkspaceAutoFit } from "./useCanvasWorkspaceAutoFit"
+
+// Navigation Controls - Pluggable Modules
+// Each module can be enabled/disabled by commenting out the hook call
+
+// Zoom mode shortcuts (Shift+1/2/3)
+export { useZoomShortcuts } from "./useZoomShortcuts"
+
+// Ctrl+wheel zoom (mouse-centered)
+export { useWheelZoom } from "./useWheelZoom"
+
+// Wheel vertical pan (when workspace exceeds viewport)
+export { useWheelPanVertical } from "./useWheelPanVertical"
+
+// Shift+wheel horizontal pan (when workspace exceeds viewport)
+export { useWheelPanHorizontal } from "./useWheelPanHorizontal"
+
+// Middle mouse drag pan
+export { useMiddleMousePan } from "./useMiddleMousePan"
+
+// Core zoom API (provides methods for ZoomControls)
 export { useCanvasZoom } from "../useCanvasZoom"
-export { useCanvasPan } from "../useCanvasPan"
