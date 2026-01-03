@@ -12,8 +12,14 @@ export async function GET() {
     return new NextResponse("Unauthorized", { status: 401 })
   }
 
+  // 只选择列表需要的字段，排除大型 json 字段以提高性能
   const userProjects = await db
-    .select()
+    .select({
+      id: projects.id,
+      name: projects.name,
+      thumbnailUrl: projects.thumbnailUrl,
+      updatedAt: projects.updatedAt,
+    })
     .from(projects)
     .where(eq(projects.userId, userId))
     .orderBy(desc(projects.updatedAt))

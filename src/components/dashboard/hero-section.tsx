@@ -51,7 +51,7 @@ export function HeroSection() {
 
   return (
     <div className="w-full space-y-8 py-8 text-center">
-      <h1 className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-4xl font-bold text-transparent md:text-5xl dark:from-blue-400 dark:to-purple-400">
+      <h1 className="bg-linear-to-r from-blue-600 to-purple-600 bg-clip-text text-4xl font-bold text-transparent md:text-5xl dark:from-blue-400 dark:to-purple-400">
         What will you design today?
       </h1>
 

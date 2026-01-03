@@ -53,7 +53,7 @@ export function Header() {
           <Input
             type="search"
             placeholder="Search your content, Canva's templates, and more"
-            className="bg-secondary focus-visible:bg-background focus-visible:ring-primary focus-visible:border-primary w-full rounded-md border-transparent pl-9 transition-all md:w-[300px] lg:w-[400px] xl:w-[500px]"
+            className="bg-secondary focus-visible:bg-background focus-visible:ring-primary focus-visible:border-primary w-full rounded-md border-transparent pl-9 transition-all md:w-75 lg:w-100 xl:w-125"
           />
         </div>
       </div>
@@ -84,7 +84,7 @@ export function Header() {
         </Button>
         <ThemeToggle />
         <Button
-          className="ml-2 bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white transition-opacity hover:opacity-90"
+          className="ml-2 bg-linear-to-r from-blue-600 to-purple-600 font-semibold text-white transition-opacity hover:opacity-90"
           onClick={createProject}
           disabled={isCreating}
         >

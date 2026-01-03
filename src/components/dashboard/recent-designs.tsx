@@ -92,7 +92,7 @@ export function RecentDesigns() {
             onClick={() => router.push(`/editor/${project.id}`)}
             className="group bg-card relative flex cursor-pointer flex-col gap-2 overflow-hidden rounded-xl border shadow-sm transition-shadow hover:shadow-md"
           >
-            <div className="bg-muted relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden">
+            <div className="bg-muted relative flex aspect-4/3 w-full items-center justify-center overflow-hidden">
               {project.thumbnailUrl ? (
                 <ProjectThumbnail project={project} />
               ) : (
