@@ -7,6 +7,7 @@ import { Social } from "@/components/auth/social"
 import { signIn } from "next-auth/react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { registerDevice } from "@/lib/auth/deviceFingerprint"
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
@@ -33,6 +34,8 @@ export default function LoginPage() {
         console.error("Login failed:", result.error)
         setError("Invalid credentials")
       } else {
+        // 登录成功，注册设备到服务器
+        await registerDevice()
         router.push("/")
         router.refresh()
       }

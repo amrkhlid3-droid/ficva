@@ -55,6 +55,7 @@ export class ModifyCanvasCommand implements Command {
       "name",
       "nodeModes", // Persist node modes (legacy)
       "customPathData", // Persist node data (new architecture)
+      "isWorkspace", // workspace 对象标识，用于画布尺寸持久化
     ])
 
     // CRITICAL: Fabric.js toObject() doesn't include width/height by default!
