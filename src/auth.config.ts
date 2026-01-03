@@ -5,47 +5,28 @@ export const authConfig = {
     signIn: "/login",
   },
   trustHost: true,
+  // 方案 2：短有效期 Token
+  session: {
+    strategy: "jwt",
+    maxAge: 60 * 20, // 20 分钟过期（之前是默认 30 天）
+    updateAge: 60 * 15, // 每 15 分钟刷新 token
+  },
   callbacks: {
-    authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user
-      const isApiAuthRoute = nextUrl.pathname.startsWith("/api/auth")
-      const isPublicRoute =
-        nextUrl.pathname === "/login" ||
-        nextUrl.pathname === "/register" ||
-        nextUrl.pathname.startsWith("/images") ||
-        nextUrl.pathname.startsWith("/_next") ||
-        nextUrl.pathname.startsWith("/favicon.ico")
-
-      if (isApiAuthRoute) return true
-
-      const isOnDashboard = !isPublicRoute
-
-      console.log(
-        `[Middleware] Path: ${nextUrl.pathname}, User: ${!!auth?.user}, IsDashboard: ${isOnDashboard}`
-      )
-
-      if (isOnDashboard) {
-        if (isLoggedIn) return true
-        return false // Redirect unauthenticated users to login page
-      } else if (
-        isLoggedIn &&
-        (nextUrl.pathname === "/login" || nextUrl.pathname === "/register")
-      ) {
-        return Response.redirect(new URL("/", nextUrl))
-      }
-      return true
-    },
     jwt({ token, user }) {
-      // When user signs in, add their id to the token
+      // When user signs in, add their info to the token
       if (user) {
         token.id = user.id
+        token.image = user.image
+        // 记录登录时间
+        token.loginAt = Date.now()
       }
       return token
     },
     session({ session, token }) {
-      // Add user id from token to session
+      // Add user info from token to session
       if (token && session.user) {
         session.user.id = token.id as string
+        session.user.image = token.image as string | null
       }
       return session
     },
