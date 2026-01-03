@@ -42,7 +42,14 @@ interface EditorState {
 
   // Zoom State
   zoom: number // Current zoom level (0.1 to 5.0, representing 10% to 500%)
-  zoomMode: "fit" | "custom" // "fit" = auto-fit to container, "custom" = user-defined
+  /**
+   * 缩放模式：
+   * - "fit": 自适应 workspace 到屏幕（Ctrl+1）
+   * - "100%": 固定 100% 缩放（Ctrl+2）
+   * - "focus": 自适应选中内容到屏幕（Ctrl+3）
+   * - "custom": 用户自定义缩放（滑块/滚轮）
+   */
+  zoomMode: "fit" | "100%" | "focus" | "custom"
   canvasContainerSize: { width: number; height: number } | null // Container dimensions for zoom calculations
   logicalCanvasSize: { width: number; height: number } // Logical canvas content size (default 1200x800)
 
@@ -84,7 +91,7 @@ interface EditorActions {
 
   // Zoom Actions
   setZoom: (zoom: number) => void
-  setZoomMode: (mode: "fit" | "custom") => void
+  setZoomMode: (mode: "fit" | "100%" | "focus" | "custom") => void
   setCanvasContainerSize: (size: { width: number; height: number }) => void
   setLogicalCanvasSize: (size: { width: number; height: number }) => void
   zoomIn: () => void
