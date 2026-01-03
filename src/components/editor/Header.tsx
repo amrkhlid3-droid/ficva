@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { Download, Undo2, Redo2, Loader2, Cloud } from "lucide-react"
 
@@ -8,6 +9,7 @@ import { useAutoSave } from "@/hooks/useAutoSave"
 import { EditableTitle } from "./EditableTitle"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Logo } from "@/components/Logo"
+import { ExportDialog } from "./ExportDialog"
 
 export default function Header() {
   const {
@@ -18,28 +20,12 @@ export default function Header() {
     setProjectName,
     editingPath,
   } = useEditorStore()
-  const canvas = useEditorStore((state) => state.canvas)
 
   // Disable undo/redo when in path edit mode
   const isInEditMode = !!editingPath
 
-  const handleExport = () => {
-    if (!canvas) return
-
-    // Export to PNG
-    const dataURL = canvas.toDataURL({
-      format: "png",
-      quality: 1,
-      multiplier: 2, // Export at 2x resolution/retina
-    })
-
-    const link = document.createElement("a")
-    link.download = "ficva-design.png"
-    link.href = dataURL
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
+  // 高级导出对话框状态（模块化：可注释掉禁用）
+  const [showExportDialog, setShowExportDialog] = useState(false)
 
   const { status } = useAutoSave()
 
@@ -112,12 +98,18 @@ export default function Header() {
         {/* Deprecated Manual Save Button Removed */}
 
         <button
-          onClick={handleExport}
+          onClick={() => setShowExportDialog(true)}
           className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
         >
           <Download className="h-4 w-4" />
           <span>Export</span>
         </button>
+
+        {/* 高级导出对话框（模块化：可注释掉禁用） */}
+        <ExportDialog
+          open={showExportDialog}
+          onOpenChange={setShowExportDialog}
+        />
         <div className="bg-border mx-2 h-6 w-px" />
         <ThemeToggle className="text-zinc-400 hover:bg-zinc-800 hover:text-white" />
       </div>
