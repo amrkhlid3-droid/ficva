@@ -65,6 +65,29 @@ export const verificationTokens = pgTable(
   })
 )
 
+/**
+ * 用户设备表 - 存储用户的已授权设备指纹
+ * 用于防止 Session 劫持，每个用户最多 5 台设备
+ */
+export const userDevices = pgTable("user_device", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // 设备指纹的哈希值（只存储核心特征的哈希，不存储原始数据）
+  fingerprintHash: text("fingerprintHash").notNull(),
+  // 设备名称（用于用户识别，如 "Chrome on MacOS"）
+  deviceName: text("deviceName").notNull(),
+  // 最后活跃时间
+  lastActiveAt: timestamp("lastActiveAt", { mode: "date" })
+    .defaultNow()
+    .notNull(),
+  // 创建时间（首次登录时间）
+  createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
+})
+
 export const projects = pgTable("project", {
   id: text("id")
     .primaryKey()
