@@ -7,7 +7,7 @@ import { fixPathObjectsAfterLoad } from "@/lib/editor/utils/CanvasUtils"
 export interface Page {
   id: string
   thumbnail?: string // Base64 image
-  json: object // Fabric.js serialization data
+  json: object | null // Fabric.js serialization data, null for empty projects
   background?: string
 }
 
@@ -49,6 +49,9 @@ interface EditorState {
   // Pan State
   isPanning: boolean // Whether middle-mouse drag is active
   scrollPosition: { x: number; y: number } // Current scroll position
+
+  // Canvas Ready State
+  isCanvasReady: boolean // Whether current active page is loaded into canvas
 }
 
 interface EditorActions {
@@ -92,6 +95,9 @@ interface EditorActions {
   // Pan Actions
   setIsPanning: (isPanning: boolean) => void
   setScrollPosition: (position: { x: number; y: number }) => void
+
+  // Canvas Ready Actions
+  setIsCanvasReady: (ready: boolean) => void
 }
 
 const historyManager = new HistoryManager()
@@ -137,6 +143,9 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     // Pan Defaults
     isPanning: false,
     scrollPosition: { x: 0, y: 0 },
+
+    // Canvas Ready Default
+    isCanvasReady: false,
 
     // Tool Defaults
     activeTool: "select",
@@ -257,15 +266,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
 
       set((state) => {
         const newPages = [...state.pages, newPage]
-        if (state.projectId) {
-          import("@/utils/storage").then(({ saveToLocalStorage }) => {
-            saveToLocalStorage(state.projectId!, {
-              pages: newPages,
-              activePageId: newPageId,
-              projectName: state.projectName,
-            })
-          })
-        }
+        // Note: localStorage saving is now handled by useAutoSave with userId
         return { pages: newPages }
       })
       get().setActivePage(newPageId)
@@ -305,15 +306,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       newPages.splice(index + 1, 0, newPage)
 
       set({ pages: newPages })
-      if (state.projectId) {
-        import("@/utils/storage").then(({ saveToLocalStorage }) => {
-          saveToLocalStorage(state.projectId!, {
-            pages: newPages,
-            activePageId: newPageId,
-            projectName: state.projectName,
-          })
-        })
-      }
+      // Note: localStorage saving is now handled by useAutoSave with userId
       get().setActivePage(newPageId)
     },
 
@@ -324,16 +317,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         if (movedPage) {
           newPages.splice(newIndex, 0, movedPage)
         }
-
-        if (state.projectId) {
-          import("@/utils/storage").then(({ saveToLocalStorage }) => {
-            saveToLocalStorage(state.projectId!, {
-              pages: newPages,
-              activePageId: state.activePageId,
-              projectName: state.projectName,
-            })
-          })
-        }
+        // Note: localStorage saving is now handled by useAutoSave with userId
         return { pages: newPages }
       })
     },
@@ -355,15 +339,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
       }
 
       set({ pages: newPages })
-      if (state.projectId) {
-        import("@/utils/storage").then(({ saveToLocalStorage }) => {
-          saveToLocalStorage(state.projectId!, {
-            pages: newPages,
-            activePageId: newActiveId,
-            projectName: state.projectName,
-          })
-        })
-      }
+      // Note: localStorage saving is now handled by useAutoSave with userId
     },
 
     setActivePage: async (id) => {
@@ -392,6 +368,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((
           "name",
           "nodeModes", // Persist node modes (legacy)
           "customPathData", // Persist node data (new architecture)
+          "isWorkspace", // workspace 对象标识，用于画布尺寸持久化
         ])
 
         // CRITICAL: Fabric.js toObject() doesn't include width/height by default!
@@ -427,8 +404,8 @@ export const useEditorStore = create<EditorState & EditorActions>()((
         fixPathObjectsAfterLoad(canvas)
       }
 
-      // Update active ID
-      set({ activePageId: id })
+      // Update active ID and reset canvas ready state
+      set({ activePageId: id, isCanvasReady: false })
 
       // Render
       canvas.requestRenderAll()
@@ -512,6 +489,10 @@ export const useEditorStore = create<EditorState & EditorActions>()((
     setIsPanning: (isPanning) => set({ isPanning }),
 
     setScrollPosition: (scrollPosition) => set({ scrollPosition }),
+
+    // --- Canvas Ready Actions ---
+
+    setIsCanvasReady: (isCanvasReady) => set({ isCanvasReady }),
   }
 })
 
